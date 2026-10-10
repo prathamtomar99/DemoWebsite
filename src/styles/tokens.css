@@ -1,0 +1,21 @@
+:root {
+  --canvas: #f5f1e9;
+  --surface: #fffcf7;
+  --ink: #252821;
+  --muted: #62645b;
+  --accent: #786044;
+  --line: #d9d3c8;
+  --control-border: #7b7b70;
+  --on-dark: #fffcf7;
+  --cinema: #181b17;
+  --focus: #81551e;
+  --error: #a12c25;
+  --success: #355b3d;
+  --font-display: 'Cormorant Garamond', Georgia, serif;
+  --font-body: 'Manrope', system-ui, sans-serif;
+  --text-display: clamp(2.75rem, 6.5vw, 6.5rem);
+  --text-body: clamp(1rem, 1.2vw, 1.125rem);
+  --space-4: 1rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+}

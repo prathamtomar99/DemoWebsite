@@ -1,0 +1,113 @@
+// oxlint-disable-next-line no-unused-expressions -- playwright-cli evaluates this file as a function expression.
+async page => {
+  const base = 'http://127.0.0.1:5173/';
+  const check = (test, message) => { if (!test) throw new Error(message); };
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  await page.addInitScript(() => {
+    window.__heroMetrics = { openBitmaps: 0, peakBitmaps: 0, watchPaints: false, stalePaints: [], maxInflight: 0, cls: 0 };
+    const metrics = window.__heroMetrics;
+    const original = window.createImageBitmap.bind(window);
+    window.createImageBitmap = async (...args) => {
+      const bitmap = await original(...args);
+      metrics.openBitmaps++;
+      metrics.peakBitmaps = Math.max(metrics.peakBitmaps, metrics.openBitmaps);
+      const close = bitmap.close.bind(bitmap);
+      let closed = false;
+      bitmap.close = () => { if (!closed) { metrics.openBitmaps--; closed = true; } close(); };
+      return bitmap;
+    };
+    new PerformanceObserver(list => {
+      for (const entry of list.getEntries()) if (!entry.hadRecentInput) metrics.cls += entry.value;
+    }).observe({type:'layout-shift',buffered:true});
+    addEventListener('DOMContentLoaded', () => {
+      new MutationObserver(records => {
+        const c = document.querySelector('canvas');
+        const s = document.querySelector('#home');
+        if (s) metrics.maxInflight = Math.max(metrics.maxInflight,Number(s.dataset.inflight)||0);
+        if (metrics.watchPaints && records.some(r=>r.attributeName==='data-render-count') && c?.dataset.paintedFrame !== c?.dataset.wantedFrame) { metrics.stalePaints.push({...c.dataset}); }
+      }).observe(document.documentElement,{subtree:true,attributes:true,attributeFilter:['data-inflight','data-render-count']});
+    });
+  });
+  const seek = async p => page.evaluate(progress => {
+    const s=document.querySelector('#home'); const v=document.querySelector('.hero-viewport');
+    scrollTo(0,s.offsetTop+(s.offsetHeight-v.offsetHeight)*progress);
+  },p);
+  const waitFrame = n => page.waitForFunction(frame => document.querySelector('canvas').dataset.paintedFrame === String(frame),n);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.setViewportSize({width:1440,height:900});
+  await page.route('**/frames/*.jpg', async route => { await new Promise(r=>setTimeout(r,350)); await route.continue(); });
+  await page.goto(base,{waitUntil:'domcontentloaded'});
+  await page.waitForFunction(() => document.querySelector('.hero-poster').naturalWidth>0);
+  const cold = await page.evaluate(() => ({poster:document.querySelector('.hero-poster').naturalWidth,heading:document.querySelector('h1').innerText,ready:document.querySelector('canvas').dataset.ready}));
+  check(cold.poster>0 && cold.heading.length>0,'Cold load lacks poster/text');
+  await page.screenshot({path:'artifacts/hero-slow-load.png'});
+  await waitFrame(1);
+  await page.evaluate(()=>window.__heroMetrics.watchPaints=true);
+  await seek(.5);
+  await page.waitForTimeout(70);
+  await seek(.9);
+  await page.waitForTimeout(70);
+  await seek(.1);
+  await waitFrame(25);
+  await page.waitForTimeout(500);
+  check(await page.locator('canvas').getAttribute('data-painted-frame')==='25','Stale load overwrote current target');
+  check(await page.evaluate(()=>window.__heroMetrics.stalePaints.length)===0,'Stale asynchronous paint observed');
+  await page.evaluate(()=>window.__heroMetrics.watchPaints=false);
+  await page.unroute('**/frames/*.jpg');
+  const resize = [];
+  for(const [width,height] of [[375,812],[812,375],[1440,900]]) {
+    await page.setViewportSize({width,height});
+    await page.waitForTimeout(150);
+    await page.waitForFunction(()=>document.querySelector('canvas').dataset.ready==='true' && document.querySelector('canvas').dataset.paintedFrame===document.querySelector('canvas').dataset.wantedFrame);
+    resize.push(await page.evaluate(()=>({width:innerWidth,height:innerHeight,canvasWidth:document.querySelector('canvas').width,canvasHeight:document.querySelector('canvas').height,capacity:document.querySelector('#home').dataset.cacheCapacity,overflow:document.documentElement.scrollWidth>innerWidth})));
+  }
+  check(resize.every(r=>!r.overflow && r.canvasWidth>0),'Resize caused overflow or empty canvas');
+  check(resize[0].capacity==='6','Resized mobile retained desktop memory budget');
+  await page.goto(base);
+  await waitFrame(1);
+  // Many distant seeks exercise eviction, reversal, and decoded-resource release.
+  for (const p of [.1,.8,.2,.7,.3,.6,.4,.9,.05,.95,1,0]) {
+    await seek(p); await waitFrame(Math.round(p*239)+1);
+  }
+  const memory = await page.evaluate(()=>({...window.__heroMetrics,cache:Number(document.querySelector('#home').dataset.cacheSize)}));
+  check(memory.openBitmaps<=18 && memory.peakBitmaps<=22 && memory.maxInflight<=4,'Unbounded decoded cache or concurrency');
+  await page.emulateMedia({reducedMotion:'reduce'});
+  await page.waitForTimeout(100);
+  check(await page.evaluate(()=>window.__heroMetrics.openBitmaps)===0,'Bitmap leak after disabling sequence');
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.goto(base);
+  await waitFrame(1);
+  let failures = 0;
+  await page.route('**/frames/frame_0121.jpg', async route => { failures++; await route.fulfill({status:404,body:'Missing test frame'}); });
+  await seek(.5);
+  await page.waitForTimeout(400);
+  const held=await page.locator('canvas').getAttribute('data-painted-frame');
+  check(held==='1' && failures===2,'Missing frame did not hold image or retry was unbounded');
+  await seek(1); await waitFrame(240);
+  await page.unroute('**/frames/frame_0121.jpg');
+  await page.route('**/frames/manifest.json',route=>route.fulfill({status:200,contentType:'application/json',body:'{"frameCount":0}'}));
+  await page.goto(base);
+  await page.waitForFunction(()=>document.querySelector('#home').dataset.static==='true');
+  check(await page.locator('h1').isVisible(),'Invalid manifest hid HTML');
+  await page.getByRole('link',{name:'Continue',exact:true}).click();
+  check(await page.locator('#handoff-heading').isVisible(),'Fallback navigation broken');
+  await page.unroute('**/frames/manifest.json');
+  await page.route('**/frames/*.jpg',route=>route.fulfill({status:200,contentType:'image/jpeg',body:'invalid JPEG test'}));
+  await page.goto(base);
+  await page.waitForFunction(()=>document.querySelector('#home').dataset.static==='true');
+  check(await page.evaluate(()=>document.querySelector('.hero-poster').naturalWidth)>0,'Decode failure lost poster');
+  await page.unroute('**/frames/*.jpg');
+  await page.goto(base);
+  await waitFrame(1);
+  // Make the temporary verification section taller to test a truly distant hero.
+  await page.locator('#after-hero').evaluate(el=>el.style.minHeight='300vh');
+  await page.evaluate(()=>scrollTo(0,document.documentElement.scrollHeight));
+  await page.waitForTimeout(150);
+  const distantBefore=await page.locator('canvas').getAttribute('data-render-count');
+  await page.waitForTimeout(350);
+  const distantAfter=await page.locator('canvas').getAttribute('data-render-count');
+  check(distantBefore===distantAfter,'Offscreen rendering continued');
+  check(errors.length===0,errors.join('\n'));
+  return {cold,rapidSeek:25,resize,memory,bitmapRelease:true,missingFrame:{held,retries:failures},invalidManifest:true,decodeFailure:true,offscreenIdle:true,errors};
+}

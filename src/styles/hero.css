@@ -1,0 +1,170 @@
+.scroll-hero {
+  --hero-gutter: 20px;
+  position: relative;
+  height: 500svh;
+  background: var(--cinema);
+  color: var(--on-dark);
+}
+.hero-viewport {
+  position: sticky;
+  top: 0;
+  height: 100svh;
+  width: 100%;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--cinema);
+}
+.hero-poster, .hero-canvas {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center 45%;
+}
+.hero-poster[hidden] { display: none; }
+.hero-canvas { visibility: hidden; }
+.hero-canvas[data-ready='true'] { visibility: visible; }
+.hero-overlay { position: absolute; inset: 0; z-index: 1; }
+.hero-topline {
+  position: absolute;
+  inset: max(24px, env(safe-area-inset-top)) var(--hero-gutter) auto;
+  gap: 16px;
+}
+.hero-brand {
+  font-family: var(--font-display);
+  font-size: clamp(1.5rem, 2.2vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -.035em;
+  text-decoration: none;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+}
+.hero-skip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  font-size: .75rem;
+  text-decoration: underline;
+  text-underline-offset: 5px;
+  white-space: nowrap;
+}
+.hero-overlay :focus-visible { outline-color: var(--on-dark); }
+.hero-handoff {
+  min-height: 75svh;
+  padding: clamp(64px, 10vw, 144px) clamp(20px, 5vw, 80px);
+}
+.handoff-label { font-size: .75rem; color: var(--muted); letter-spacing: .06em; }
+.hero-handoff h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: clamp(2.25rem, 4vw, 4.5rem);
+  line-height: 1.08;
+  letter-spacing: -.02em;
+  margin: 24px 0;
+}
+.hero-handoff > p:not(.handoff-label) { max-width: 48ch; line-height: 1.7; color: var(--muted); }
+.hero-handoff a { display: inline-flex; align-items: center; min-height: 44px; margin-top: 24px; font-size: .875rem; text-underline-offset: 5px; }
+.scroll-hero[data-static='true'] { height: auto; }
+.scroll-hero[data-static='true'] .hero-viewport { position: relative; }
+.scroll-hero[data-static='true'] .hero-canvas { display: none; }
+
+/* Story layers do not own scrolling, canvas geometry, or image loading. */
+.hero-overlay { pointer-events: none; }
+.hero-topline { z-index: 3; }
+.hero-topline a { pointer-events: auto; }
+.hero-story { position: absolute; inset: 0; --story-x: 40px; --story-y: 36px; --intro-travel: 1px; }
+.hero-story-stage { position: absolute; visibility: hidden; }
+.hero-story-stage::before {
+  content: ''; position: absolute; z-index: -1; pointer-events: none;
+  inset: -64px -64px;
+  background: radial-gradient(ellipse, rgb(24 27 23 / .84) 0 40%, transparent 72%);
+}
+.hero-eyebrow { margin: 0 0 16px; font-size: .75rem; letter-spacing: .19em; line-height: 1.5; text-transform: uppercase; }
+.hero-story h1, .hero-story h2 {
+  font-family: var(--font-display); font-weight: 500; letter-spacing: -.035em;
+  line-height: 1.04; text-wrap: balance; margin: 0;
+}
+.story-intro { left: var(--hero-gutter); bottom: 88px; width: min(430px, 38vw); }
+.story-intro h1 { font-size: clamp(3rem, 4.8vw, 4.75rem); max-width: 11ch; }
+.story-description { max-width: 35ch; margin: 24px 0; font-size: .9375rem; line-height: 1.7; text-wrap: pretty; }
+.story-right, .story-left { width: min(340px, 29vw); top: 35%; }
+.story-right { right: var(--hero-gutter); text-align: right; }
+.story-left { left: var(--hero-gutter); top: 48%; }
+.story-right h2, .story-left h2 { font-size: clamp(2.25rem, 3.1vw, 3rem); }
+.story-finale { left: 23%; right: 23%; top: 30%; text-align: center; }
+.story-finale h2 { font-size: clamp(3rem, 4.5vw, 4.5rem); }
+.story-finale .story-cta-wrap { margin-top: 32px; }
+.story-finale::before { inset: -72px -96px; }
+.story-cta {
+  display: inline-flex; align-items: center; justify-content: center; gap: 24px;
+  min-height: 48px; padding: 12px 20px; border-radius: 2px;
+  background: var(--on-dark); color: var(--ink); font-size: .8125rem;
+  text-decoration: none; touch-action: manipulation;
+  transition: background-color 200ms, transform 200ms;
+}
+.story-cta:hover { background: var(--line); transform: scale(1.02); }
+.story-cta:focus-visible { outline: 2px solid var(--on-dark); outline-offset: 4px; }
+@media (min-width: 768px) { .scroll-hero { --hero-gutter: 32px; } .hero-topline { top: 32px; } }
+@media (min-width: 1024px) { .scroll-hero { --hero-gutter: 48px; } }
+@media (min-width: 1280px) { .scroll-hero { --hero-gutter: 64px; } }
+@media (min-width: 1024px) and (min-aspect-ratio: 145/100) and (max-aspect-ratio: 2/1) {
+  .hero-poster { object-fit: cover; object-position: right bottom; }
+  .hero-overlay::before {
+    content: ''; position: absolute; inset: 0 0 auto; height: 180px; z-index: -1;
+    background: linear-gradient(180deg, rgb(24 27 23 / .8), transparent);
+  }
+}
+/* Portrait: split the introduction around the intact film; narrative below it. */
+@media (max-aspect-ratio: 1/1) {
+  .hero-story { --story-x: 16px; --story-y: 20px; --intro-travel: .5px; }
+  .hero-story-stage::before { display: none; }
+  .story-intro { inset: 112px var(--hero-gutter) 48px; width: auto; }
+  .story-intro .story-heading-group { max-width: 520px; }
+  .story-intro h1 { font-size: clamp(2.75rem, 6vw, 4rem); max-width: 16ch; }
+  .story-intro .story-detail-group { position: absolute; bottom: 0; }
+  .story-description { margin: 0 0 24px; max-width: 40ch; }
+  .story-right, .story-left, .story-finale {
+    top: calc(45svh + 30.9375vw + 32px); left: var(--hero-gutter); right: var(--hero-gutter);
+    width: auto; max-width: 540px;
+  }
+  .story-right { margin-left: auto; }
+  .story-right h2, .story-left h2, .story-finale h2 { font-size: clamp(2.125rem, 5.4vw, 3rem); }
+  .story-finale { margin-inline: auto; }
+  .story-finale .story-cta-wrap { margin-top: 24px; }
+}
+@media (max-width: 767px) and (max-aspect-ratio: 1/1) {
+  .story-intro { top: 104px; bottom: max(32px, env(safe-area-inset-bottom)); }
+  .hero-eyebrow { font-size: .6875rem; margin-bottom: 12px; }
+  .story-description { font-size: .875rem; line-height: 1.6; }
+  .story-intro h1 { max-width: 13ch; }
+}
+@media (max-height: 699px) and (max-aspect-ratio: 1/1) {
+  .story-intro { top: 88px; bottom: 24px; }
+  .story-intro h1 { font-size: 2.375rem; }
+  .story-description { font-size: .8125rem; margin-bottom: 16px; }
+  .story-right, .story-left, .story-finale { top: calc(45svh + 30.9375vw + 20px); }
+  .story-right h2, .story-left h2, .story-finale h2 { font-size: 2rem; }
+  .story-finale .story-cta-wrap { margin-top: 16px; }
+}
+@media (max-height: 599px) and (min-aspect-ratio: 1/1) {
+  .hero-topline { top: 12px; }
+  .hero-story { --story-x: 16px; --story-y: 16px; --intro-travel: .4px; }
+  .story-intro { bottom: 24px; width: 43vw; }
+  .story-intro h1 { font-size: 2rem; max-width: 20ch; }
+  .hero-eyebrow { font-size: .6875rem; margin-bottom: 8px; }
+  .story-description { font-size: .8125rem; line-height: 1.5; margin: 12px 0; }
+  .story-right, .story-left { top: 30%; width: 35vw; }
+  .story-right h2, .story-left h2 { font-size: 2rem; }
+  .story-finale { top: 27%; left: 25%; right: 25%; }
+  .story-finale h2 { font-size: 2.25rem; }
+  .story-finale .story-cta-wrap { margin-top: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* useHeroMode owns geometry so a live preference change captures the old position first. */
+  .story-cta { transition: none; }
+  .story-cta:hover { transform: none; }
+}

@@ -1,0 +1,89 @@
+# Aether Estates — Motion and Video Specification
+
+## Authority
+
+This document owns HOW things move: scroll mapping, video-frame rendering, transitions, loading, and motion alternatives. `BRIEF.md` owns product content and interactions; `DESIGN.md` owns colors, typography, and spatial composition. Explicit user instructions take precedence, then the owner of each subject.
+
+## Source and current inspection status
+
+Use only `assets/source/DroneVideo.mp4`, the supplied exterior-to-interior drone shot. The footage is the single source of truth for architectural movement; do not synthesize camera movement or invent extra scenes. Batch 2 inspection with ffprobe verified H.264 video at 1280 × 720, constant 24 FPS, 240 decoded source frames, and a 10.000000-second video stream. The container lasts 10.026667 seconds and includes stereo AAC audio; audio is not included in the image assets. No rotation metadata is present. Width/height gives a 16:9 raster; source SAR/DAR tags are unspecified. The original source remains unchanged, verified by SHA-256.
+
+The source contains a visible Gemini watermark. It remains an existing source limitation and has not been removed. Preserve the master. A future properly licensed clean export must be replaceable through source configuration and regenerated media manifests, without changing renderer code. Do not hide the watermark via frame processing or render cropping.
+
+## Scroll-controlled cinematic stage
+
+Use a section approximately **500vh** tall with a viewport-height child pinned using native CSS `position: sticky; top: 0`. Its active distance is section height minus pinned viewport height, approximately four viewport heights. Keep native wheel, touch, scrollbar, keyboard, and anchor scrolling; do not intercept input or trap the visitor. The following section stays in normal document flow.
+
+Render source-derived frames into a canvas. The source video must not autoplay, play on a clock, or provide a parallel playback timeline. Batch 2 prepares assets only. `npm run prepare:hero` generates the verified source sequence; Batch 3 will implement rendering only after user approval. Always read the actual manifest rather than hardcoding the current frame count.
+
+For section document top `S`, section height `H`, pinned viewport height `V`, and document scroll offset `Y`:
+
+```
+p = clamp((Y - S) / max(1, H - V), 0, 1)
+frameIndex = min(N - 1, floor(p * (N - 1) + 0.5))
+```
+
+`N` is the manifest's actual frame count (at least one). At p=0 display frame 0; at p=1 display N-1. The same progress must select the same frame in either direction. Moving upward reverses the shot. Coalesce drawing into requestAnimationFrame; avoid React state updates for every scroll event. Do not spring-smooth or time-integrate the frame index: that would introduce lag and history dependence. Recalculate geometry on resize/orientation and synchronize restored/deep-linked scroll positions.
+
+## Four-stage text choreography
+
+Use the copy from the brief and placements from the design document; these ranges only govern movement. Map opacity/translation to normalized progress so rapid scrolling and reversal never queue stale time-based animations.
+
+| Stage | Enter | Hold | Exit |
+| --- | --- | --- | --- |
+| 1: opening heading, support, CTA | One-time mount entrance at p=0 | 0.00–0.04 | 0.04–0.14 |
+| 2: right atmospheric message | 0.18–0.24 | 0.24–0.43 | 0.43–0.50 |
+| 3: left property message | 0.54–0.61 | 0.61–0.80 | 0.80–0.87 |
+| 4: centered closing heading/CTA | 0.88–0.96 | 0.96–1.00 and through release | No exit fade within hero |
+
+Batch 4 correction: the user's explicit four-stage timeline replaces the earlier proposed ranges and fully-visible-on-mount rule. Story copy is configured in `src/config/hero-story.ts`; this document governs its motion only.
+
+Use smoothstep `t*t*(3-2*t)` within each scroll entrance/exit window, with no spring or elapsed-time lag. Side narratives enter from 40 px horizontally, reduced to 16 px on portrait/compact screens. Finale rises 36 px, reduced to 20 px portrait or 16 px compact landscape. Exits use restrained fractions of that travel.
+
+Opening eyebrow, headline, description, and CTA have separate mount layers: opacity 0→1 and translateY 28/56/36/28 px→0, durations 1/1.3/1.1/1 seconds, delays .05/.2/.4/.55 seconds, easing [.16, 1, .3, 1]. Portrait mount travel is halved; compact landscape uses 40%. These animations run once and independently of media loading. A separate outer layer handles the scroll-driven fade/lift, becoming fully hidden at .14. Returning to the top restores the introduction without replaying its entrance. Static modes skip the mount entrance entirely. Later stages use only scroll-driven transitions; stages 2 and 3 are narrative, not extra controls.
+
+Only visible-stage controls participate in pointer and keyboard interaction; hidden groups must be inert, not merely transparent. If focus is inside an outgoing interactive group, retain that group's visibility until focus leaves, then reconcile it to progress. Do not move focus on scrolling. Ensure a single semantic h1 and avoid repetitive screen-reader announcements; the canvas itself should not announce each frame. The no-motion content alternative must preserve the story and CTA access.
+
+## Loading and rendering reliability
+
+The prepared runtime output uses `/frames/manifest.json`, containing frame paths, dimensions, count, and normalized output sample times. These sample times map into the source timeline through the recorded FFmpeg sampling filter. Index ordering must be explicit. The independently loadable first-frame poster is `/media/hero-poster.jpg`. Current output is 240 sequential JPEGs at 1280 × 720 and 24 FPS, named `/frames/frame_0001.jpg` through `/frames/frame_0240.jpg`. The manifest is authoritative after every regeneration. Detailed sizes and verification are recorded in `docs/HERO_ASSETS.md`.
+
+- Display the poster immediately in the reserved media region; render heading and actions independently from the first React render. Never wait for all frames or a progress loader before exposing overlays.
+- Keep the poster underneath the canvas until the first successful decoded draw. Do not reveal a cleared/blank canvas. On total media failure, retain the designed backing surface and accessible copy/actions.
+- Prioritize the first frame, then the current target and nearby frames in the current direction. Use bounded request concurrency (initially 4 desktop / 2 mobile), deduplicated requests, and a bounded decoded-image cache. Tune bounds after measurement.
+- If a target is unavailable, request it first and retain the last successfully drawn frame or poster. Never block scrolling or draw an empty slot. Redraw when it resolves only if it is still the current target; stale requests cannot overwrite the new selection.
+- Use a bounded retry policy (one retry per failed frame), handle decode/network failures, and release evicted bitmap resources. Cancel pending work and remove listeners on unmount; tolerate React StrictMode setup/cleanup cycles.
+- Resize the canvas backing store only when needed, cap effective device pixel ratio (initial ceiling 2), and draw again immediately after resizing. Preserve source aspect ratio and source markings according to the design document.
+- Suspend unnecessary render/loading work when the document is hidden or the hero is distant. Do not preload every decoded frame into memory.
+
+The deterministic index is the requested frame, even during a cache miss. Once its frame is ready, its displayed result must match the mapping; temporary held-frame fallback must not alter the timeline.
+
+## Responsive motion and resource budgets
+
+Desktop and tablet retain the same story and progress mapping. Mobile uses a stable viewport measurement (prefer small viewport units where appropriate) to limit address-bar-induced pin jumps. Retain approximately 500vh on capable mobile devices; text travel is reduced as above. Recompute from the current scroll offset after orientation changes without replaying from the beginning.
+
+Prepare a lower-resolution mobile sequence in the later asset batch if measurement justifies it. Variant manifests must map to the same source timeline. Select a variant once per session/viewport change without interrupting the displayed image. Do not upscale the source or require maximum-resolution frames on phones. Start with a decoded-image cache budget around 64 MiB desktop / 24 MiB mobile and tune using actual dimensions and device testing. Respect Save-Data where exposed; absent connection APIs must not break the feature.
+
+For explicit reduced-data preference or persistently unusable loading, retain a static source poster and a usable short hero, with the closing invitation available without traversing an empty long section. Keep any optional “Enable cinematic motion” action user-initiated. Normal media stalls alone should hold the current frame rather than suddenly collapse a section mid-scroll.
+
+## Reduced-motion alternative
+
+Observe `prefers-reduced-motion` both initially and when it changes. Default to a static source poster, ordinary-height hero, readable opening copy, and accessible closing CTA. Disable frame-sequence downloads, pinned travel, translations, stagger, parallax, and smooth anchor scrolling. Narrative copy can appear in normal reading order. If the preference changes mid-hero, preserve the currently focused element and logical reading position when releasing the pin. Animation is never necessary to reach a destination or understand content.
+
+## Release and other motion
+
+At p=1 hold the last source frame and stage-4 copy. The sticky child releases naturally with its parent; the final composition scrolls away as the featured-properties section enters. Do not fade it to blank, restart the footage, insert a spacer jump, or switch to a second scene. Returning upward re-enters the same mapping. Anchor navigation past the hero must bypass it normally.
+
+Later section reveals may use a one-time 12 px rise and opacity over 350 ms, easing `[0.22, 1, 0.36, 1]`. Hover/focus appearance transitions: 160 ms ease-out. Dialog/menu appearance: opacity and at most 8 px translation over 180 ms; exit 140 ms. Motion must never delay focus management or error feedback. Reduced motion removes these transitions. No continuous decorative loops or artificial camera zoom.
+
+## Motion acceptance for later batches
+
+- Top, quarter, middle, three-quarter, and endpoint scroll positions select the expected manifest frame; repeating in reverse produces identical indices.
+- Actual source architecture advances and reverses without autonomous playback; rapid scroll jumps resolve to the latest target.
+- Sticky travel spans the planned section, releases naturally, and re-enters correctly; anchor, touch, keyboard, and restored-scroll paths work.
+- Four text stages follow their windows; initial copy enters without waiting for media and final copy remains visible until release.
+- Cold cache, throttled connection, missing middle frame, decode error, total asset failure, and resize never expose an empty canvas or block actions.
+- Focused controls remain visible; hidden-stage controls cannot receive focus. Screen readers receive stable content, not frame announcements.
+- Reduced motion uses a short static experience with no sequence fetch; reduced-data mode is usable. Live preference changes preserve reading position.
+- Real mobile testing checks rendering cadence, memory, request bounds, aspect ratio, source watermark visibility, and browser toolbar/orientation changes.
+- Validate actual asset metadata on every regeneration. Batch 2 completes asset preparation only; none of this motion is implemented yet.
