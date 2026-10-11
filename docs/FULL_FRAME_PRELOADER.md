@@ -83,6 +83,8 @@ Not every CPU metric improved. Measured scrolling main-thread task duration rose
 
 The existing 72/60 temporal samples still produce visible stepping at some scroll speeds, and midpoint blending can still show doubled architectural edges. Preloading does not create extra motion samples, change the blending curve, pre-upload every GPU texture, or solve all possible rendering stalls. The supported conclusion is narrower: **after successful preparation, the tested traversals needed no network downloads or asynchronous decodes and had zero p95 requested-frame lag.**
 
+A supplemental normal-network audit isolated eight seconds of forward/reverse scrolling after preparation. Both builds, on both viewport profiles, recorded zero long tasks and zero p95 frame lag. Retained counts were 12/6 before and 72/60 afterward. This confirms the normal-network baseline was already responsive in this sample; it does not establish an improvement there. Raw results: `artifacts/full-frame-preloader/scroll-stalls.json`.
+
 ### Regression and failure verification
 
 - TypeScript, lint, and production build pass. **18/18 unit tests pass**, including full-memory policy, genuine progress/Canvas completion, existing manifest/mapping/blending/timeline/form checks, and transport cancellation/retry tests. The Node TypeScript-stripping experimental notice remains test-tooling output.
@@ -93,6 +95,7 @@ The existing 72/60 temporal samples still produce visible stepping at some scrol
 - The existing preparation suite verifies reduced-motion/Save-Data zero-frame behavior, pagehide/pageshow, reload preparation, slow manifests, failed assets, and no simultaneous duplicate requests. Its former three-frame and early-timeout assertions now check the explicitly requested full-sequence policy. Existing cache assertions now check exactly N retained images rather than the superseded 12/6 eviction limit.
 - The missing-pair browser scenarios now verify that a network failure cannot affect an already retained pair, and that failure **during** initial preparation selects the poster. Pure adjacent-frame fallback tests remain intact. Renderer/blending/scroll-range assertions are unchanged.
 - The clock-controlled 45-second deadline test verifies no early three-second reveal and a usable static fallback. Its initial Chromium CSS assertion ran before Motion's next mocked animation frame; advancing that mocked frame corrected the test, and the deadline check passed.
+- The additional transient-failure test passed: one frame failed its first request, succeeded on its second, and preparation completed with all 72 frames retained without falling back. Results: `artifacts/hero-optimization/full-retry-final.json`.
 
 Screenshots: [loading progress](../artifacts/full-frame-preloader/progress-mobile.png), [desktop ready](../artifacts/full-frame-preloader/ready-1440-cold.png), [mobile ready](../artifacts/full-frame-preloader/ready-375-cold.png). Raw comparisons: `artifacts/full-frame-preloader/{before,after}-{normal,slow}.json`. Browser results: `artifacts/hero-optimization/full-*.json`.
 
@@ -100,6 +103,6 @@ Screenshots: [loading progress](../artifacts/full-frame-preloader/progress-mobil
 
 Runtime changes: `FrameLoader.prepareAll()`, preparation lifecycle/Canvas gating in `use-hero-sequence.ts`, `use-hero-preparation.ts`, `HeroPreparation.tsx`, `ScrollHero.tsx`, `full-frame-policy.ts`, configuration in `site.ts`, and the loading-screen CSS. Added focused tests and benchmark scripts; updated affected regressions to the new contract. `MOTION_REFERENCE.md` records the explicit policy replacement. The previous `CINEMATIC_PRELOADER.md` remains as the historical comparison report; README points here.
 
-Production JavaScript is **123.57 kB gzip**, versus 124.74 kB for the prior preloader; CSS is **6.75 kB**, versus 6.69 kB. No dependency changes or asset regeneration.
+The final verification build reports JavaScript at **123.59 kB gzip**, versus 124.74 kB for the prior preloader; CSS is **6.76 kB**, versus 6.69 kB. No dependency changes or asset regeneration. The final rerun of TypeScript, lint, production build, and all 18 unit tests passed; the original source-video SHA-256 remains unchanged.
 
 Ready for local review with the documented memory and slow-network costs. Physical phones, real Safari, actual OS/GPU memory pressure, and the new implementation on Vercel remain unverified; nothing was deployed. Retaining decoded images removes dependence on WebKit's previously observed HTTP-cache reuse behavior **during scrolling**, but its initial warm-visit loading may still differ on the deployed headers. The existing font warning and source-media licensing/watermark limitations remain. Do not interpret these results as universal smoothness, field Core Web Vitals, or commercial-publication approval.
