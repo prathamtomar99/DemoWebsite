@@ -8,14 +8,14 @@ async page => {
  await page.setViewportSize({width:1440,height:900});await page.goto(base);await page.waitForTimeout(1800);
  const seek=async p=>{
   await page.evaluate(p=>{document.activeElement?.blur();scrollTo(0,(document.querySelector('#home').offsetHeight-document.querySelector('.hero-viewport').offsetHeight)*p)},p);
-  await page.waitForFunction(p=>Number(document.querySelector('canvas').dataset.paintedFrame)===Math.round(p*239)+1,p);
+  await page.waitForFunction(p=>Number(document.querySelector('canvas').dataset.paintedFrame)===Math.round(p*(Number(document.querySelector('canvas').dataset.frameCount)-1))+1,p);
   check(await page.locator('canvas').getAttribute('data-ready')==='true','Blank canvas');
   check(await page.locator('#home').evaluate(n=>+n.dataset.cacheSize<=+n.dataset.cacheCapacity),'Cache overflow');
  };
  const frames=[];
  for(const p of [0,.25,.65,.95,1,.65,.25,0]){await seek(p);frames.push({p,frame:await page.locator('canvas').getAttribute('data-painted-frame')});if(engine==='chromium')await page.screenshot({path:`artifacts/qa-hero-${Math.round(p*100)}.png`})}
  await seek(.65);await page.reload();await page.waitForTimeout(1800);
- check(await page.evaluate(()=>{const s=document.querySelector('#home'),v=document.querySelector('.hero-viewport');const p=Math.min(1,Math.max(0,-s.getBoundingClientRect().top/(s.offsetHeight-v.offsetHeight)));return +document.querySelector('canvas').dataset.paintedFrame===Math.round(p*239)+1}),'Refresh desynchronization');
+ check(await page.evaluate(()=>{const s=document.querySelector('#home'),v=document.querySelector('.hero-viewport');const p=Math.min(1,Math.max(0,-s.getBoundingClientRect().top/(s.offsetHeight-v.offsetHeight)));return +document.querySelector('canvas').dataset.paintedFrame===Math.round(p*(Number(document.querySelector('canvas').dataset.frameCount)-1))+1}),'Refresh desynchronization');
  await page.goto(base+'/?qa-deep#properties');await page.waitForTimeout(700);
  check(await page.locator('#properties').evaluate(n=>n.getBoundingClientRect().top<innerHeight),'Cold fragment navigation');
  await page.goto(base+'/?qa-history');await page.goBack();await page.waitForTimeout(700);

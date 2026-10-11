@@ -39,7 +39,7 @@ async page => {
   await dataPage.close();
   const broken=await page.context().newPage();
   await broken.route('**/frames/**',r=>r.fulfill({status:404,body:'unavailable'}));
-  await broken.route('**/media/hero-poster.jpg',r=>r.fulfill({status:404,body:'unavailable'}));
+  await broken.route('**/media/hero-poster.webp',r=>r.fulfill({status:404,body:'unavailable'}));
   await broken.goto('http://127.0.0.1:5173/');
   await broken.waitForFunction(()=>document.querySelector('#home').dataset.static==='true');
   check(await broken.locator('h1').isVisible(),'Total media failure hid content');

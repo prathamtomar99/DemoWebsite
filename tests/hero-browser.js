@@ -2,7 +2,7 @@
 async page => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
-  const manifest = await (await page.request.get('http://127.0.0.1:5173/frames/manifest.json')).json();
+  let manifest = await (await page.request.get('http://127.0.0.1:5173/frames/manifest.json')).json();
   const check = (condition, message) => { if (!condition) throw new Error(message); };
   const state = () => page.evaluate(() => ({
     painted: Number(document.querySelector('canvas').dataset.paintedFrame),
@@ -27,7 +27,7 @@ async page => {
     check(current.wanted === expected, `Wanted mismatch at ${progress}`);
     check(current.ready === 'true', 'Canvas blank');
     check(current.cache <= current.capacity, 'Cache exceeded cap');
-    check(current.inflight <= 4, 'Request pool exceeded cap');
+    check(current.inflight <= 2, 'Request pool exceeded cap');
     return current;
   };
   await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -54,6 +54,7 @@ async page => {
   const sizes = [];
   for (const [width, height] of [[768,1024],[375,812]]) {
     await page.setViewportSize({width,height});
+    manifest = await (await page.request.get('http://127.0.0.1:5173'+(width<768?'/frames/v2/mobile/manifest.json':'/frames/manifest.json'))).json();
     await page.goto('http://127.0.0.1:5173/');
     await page.waitForFunction(() => document.querySelector('canvas').dataset.paintedFrame === '1');
     check(!(await state()).overflow, `Overflow at ${width}`);

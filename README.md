@@ -39,7 +39,7 @@ Edit `src/config/site.ts` for the brand and media paths, `src/config/hero-story.
 - `src/styles/`: tokens and global styles.
 - `src/assets/`: future bundled assets.
 - `assets/source/`: untouched source master, not shipped by Vite.
-- `public/frames/`: generated JPEG sequence and verified `manifest.json`.
+- `public/frames/`: versioned desktop/mobile WebP sequences and verified manifests.
 - `public/media/`: generated first-frame poster.
 - `scripts/prepare-hero.mjs`: reproducible local media pipeline.
 
@@ -57,21 +57,30 @@ Prepare or regenerate the assets:
 npm run prepare:hero
 ```
 
-The script uses `assets/source/DroneVideo.mp4` unchanged. It probes actual source metadata, samples at up to 24 FPS (without increasing a lower average source rate), preserves composition, limits output to the source resolution and 1280 px width, and writes high-quality JPEGs at FFmpeg quality 4. It does not trim, crop, sharpen, recolor, or remove the source watermark. The poster is copied from the first extracted frame without recompression; visually recheck its suitability when replacing the source.
+The script preserves `assets/source/DroneVideo.mp4`. FFmpeg decodes the original and Sharp (development-only) encodes uniformly sampled WebP frames at quality 64. Every profile includes the first and final source composition. No crop, grade, sharpening, scene generation, or watermark removal occurs.
 
 Outputs:
 
-- `public/frames/frame_0001.jpg` onward: sequential frames, starting at 1.
-- `public/frames/manifest.json`: authoritative actual count, rate, dimensions, duration, URLs, normalized sample times, sizes, and source provenance/checksum.
-- `public/media/hero-poster.jpg`: independently loadable exterior poster.
+- `public/frames/v2/desktop/`: 72 frames, 960×540, 2.64 MiB, plus manifest.
+- `public/frames/v2/mobile/`: 60 frames, 720×405, 1.55 MiB, plus manifest.
+- `public/frames/manifest.json`: compatible desktop manifest pointing at the desktop directory; no duplicate images.
+- `public/media/hero-poster.webp`: independently loadable exterior poster, copied from the verified desktop opening frame.
 
-Manifest paths are public URL paths (`/frames/...`, `/media/...`), not paths containing `public/`. When deploying beneath a non-root Vite base in a later batch, resolve these paths against `import.meta.env.BASE_URL`. The manifest's `frameTimesSeconds` describes output sampling, not a claim that source timestamps are identical. `durationSeconds` describes the source video stream; container/audio duration can differ.
+To regenerate all six comparison profiles outside deployment output:
 
-Each run checks tools and source before extraction, validates every JPEG by decoding, checks the full numbered sequence and dimensions, and verifies the source SHA-256 before publishing. Output staging occurs outside `public/`. The script refuses output-directory symlinks, unowned manifests/assets, and unexpected numbered JPEGs. Reruns replace only recognized previously generated frames, manifest, and poster; unrelated assets remain untouched. Ordinary publishing failures roll back the previous generated files. Avoid running builds or serving these assets during the short publication step.
+```bash
+npm run prepare:hero -- --candidates
+```
+
+Candidates live under ignored `artifacts/hero-optimization/candidates/`. Only selected desktop/mobile assets ship. The runtime selects mobile below 768 CSS pixels on page mount, then keeps that profile through resize/orientation; layout and cache limits still adapt. This prevents repeated downloads and stale cross-profile paints. Reload after changing between radically different window sizes to select another resolution.
+
+Manifest paths are public URL paths (`/frames/...`, `/media/...`), not paths containing `public/`. When deploying beneath a non-root Vite base in a later batch, resolve these paths against `import.meta.env.BASE_URL`. The manifest's `frameTimesSeconds` records selected source timestamps; `sourceFrameIndices` records exact decoded indices. `fps` is sampling density across source duration, not timed playback. `durationSeconds` describes the source video stream; container/audio duration can differ.
+
+Each run checks tools and source, decodes every output, verifies dimensions, count, endpoint sampling, and unchanged source SHA-256. Staging stays outside `public/`. Symlink output directories, unowned manifests, and unexpected files inside generated profile folders are rejected. Publication replaces only owned profiles and root metadata, with rollback for ordinary failures. Other public media is untouched. Avoid concurrent builds or serving during publication.
 
 A process lock prevents simultaneous runs. If forcibly interrupted, check that the PID in `.prepare-hero.lock` is no longer running before removing the stale lock. Inspect any `.hero-preparation-*` directory before cleanup; it may contain staged output or backups from an interrupted publish.
 
-To replace the footage, supply a properly licensed source at the same configured path, rerun the command, and inspect the first/middle/last frames. The pipeline requires an SDR export for browser JPEG delivery; HDR input fails explicitly instead of applying unapproved tone mapping. No application-component rewrite is needed. The existing Gemini watermark remains visible in current source-derived assets.
+To replace the footage, supply a properly licensed source at the same configured path, rerun the command, and inspect the first/middle/last frames. The pipeline requires an SDR export for browser image delivery; HDR input fails explicitly instead of applying unapproved tone mapping. No application-component rewrite is needed. The existing Gemini watermark remains visible in current source-derived assets.
 
 See `docs/HERO_ASSETS.md` for measured source metadata, asset sizes, and verification results.
 
@@ -100,7 +109,7 @@ playwright-cli -s=aether-hero close
 playwright-cli -s=aether-touch close
 ```
 
-Browser scripts target the existing verified 240-frame fixture and a dev server on port 5173. They save local screenshots under `artifacts/` (ignored by Git). The test-only page metrics are injected by Playwright, not shipped in the application. Canvas/section data attributes expose wanted/painted indices and bounded-cache diagnostics without public UI debug text.
+Browser scripts read the active verified manifests and a dev server on port 5173. They save local screenshots under `artifacts/` (ignored by Git). The test-only page metrics are injected by Playwright, not shipped in the application. Canvas/section data attributes expose wanted/painted indices and bounded-cache diagnostics without public UI debug text.
 
 ## Website sections and interactions
 
@@ -112,7 +121,7 @@ Browser scripts target the existing verified 240-frame fixture and a dev server 
 - Property dialogs hand off to a preselected viewing form. Only one dialog is active. Escape, contained keyboard focus, trigger focus restoration, background scroll locking, and internal scrolling are supported.
 - The form validates locally, clears values on successful demo completion and on close, and makes no submission request or persistent storage writes.
 
-All new photographs are local responsive WebP assets. Provenance, verified licences, download commands, and attribution are in `docs/IMAGE_SOURCES.md`. The agency image is a copy of an existing source frame; the drone master and extracted sequence remain unchanged.
+All new photographs are local responsive WebP assets. Provenance, verified licences, download commands, and attribution are in `docs/IMAGE_SOURCES.md`. The agency image is a copy of an existing source frame; the drone master remains unchanged; optimized hero derivatives are documented separately.
 
 ```bash
 # Additional browser checks; run against npm run dev on port 5173.
@@ -148,3 +157,9 @@ The website is suitable for a client concept demonstration within the verified s
 ## Client demonstration (Batch 7)
 
 See [docs/DEMO_HANDOFF.md](docs/DEMO_HANDOFF.md) for the local preview commands, recommended client walkthrough, screenshots/recording, all ten cold/warm Lighthouse results, and publication requirements. No application behavior or media was changed in this batch.
+
+## Hero performance optimization
+
+See [docs/HERO_PERFORMANCE_OPTIMIZATION.md](docs/HERO_PERFORMANCE_OPTIMIZATION.md) for all six candidates, production scroll measurements, verification, visual tradeoffs, and deployment limitations. The original 240-JPEG sequence is retired from public output. No GitHub push or deployment was performed.
+
+Audit scripts use an existing Playwright installation (set `PLAYWRIGHT_PATH` if it is not at the documented local Homebrew path). `scripts/benchmark-hero.mjs` measures production scrolling; `scripts/serve-hero-candidates.mjs` serves ignored candidate assets only on localhost for comparisons. They do not run in the website.

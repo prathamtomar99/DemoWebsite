@@ -1,4 +1,4 @@
-import { framePath, publicAsset } from './manifest'
+import { frameUrl } from './manifest'
 import type { FrameManifest } from './manifest'
 
 export interface DecodedFrame {
@@ -18,14 +18,14 @@ export interface LoaderOptions {
 }
 
 export const desktopLoader: LoaderOptions = {
-  maxFrames: 28, maxBytes: 64 * 1024 ** 2, concurrency: 4, ahead: 5, behind: 2, timeoutMs: 12000,
+  maxFrames: 12, maxBytes: 64 * 1024 ** 2, concurrency: 2, ahead: 2, behind: 0, timeoutMs: 12000,
 }
 export const mobileLoader: LoaderOptions = {
-  maxFrames: 28, maxBytes: 24 * 1024 ** 2, concurrency: 2, ahead: 2, behind: 1, timeoutMs: 12000,
+  maxFrames: 6, maxBytes: 24 * 1024 ** 2, concurrency: 2, ahead: 2, behind: 0, timeoutMs: 12000,
 }
 
-async function decodeFrame(url: string, signal: AbortSignal): Promise<DecodedFrame> {
-  const response = await fetch(url, { signal, cache: 'force-cache' })
+async function decodeFrame(url: string, signal: AbortSignal, current: boolean): Promise<DecodedFrame> {
+  const response = await fetch(url, { signal, cache: 'force-cache', priority: current ? 'high' : 'low' })
   if (!response.ok) throw new Error(`Image request failed: ${response.status}`)
   const blob = await response.blob()
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
@@ -63,6 +63,7 @@ export class FrameLoader {
   private direction = 1
   private paused = true
   private disposed = false
+  private retryTimer: ReturnType<typeof setTimeout> | undefined
   capacity: number
   private manifest: FrameManifest
   private options: LoaderOptions
@@ -104,11 +105,13 @@ export class FrameLoader {
   want(index: number, direction: number) {
     if (this.disposed) return
     if (this.wanted === index && this.direction === direction && !this.paused) return
+    if (index !== this.wanted) this.clearRetry()
     this.wanted = index
     this.direction = direction
     this.paused = false
     const priorities = [index]
-    // Alternate nearby frames, with a larger window in the direction of travel.
+    // Prioritize travel direction. Previously visited frames remain reusable in cache;
+    // do not spend constrained bandwidth backfilling frames behind the target.
     for (let step = 1; step <= Math.max(this.options.ahead, this.options.behind); step++) {
       if (step <= this.options.ahead) priorities.push(index + step * direction)
       if (step <= this.options.behind) priorities.push(index - step * direction)
@@ -121,6 +124,7 @@ export class FrameLoader {
   }
 
   suspend() {
+    this.clearRetry()
     this.paused = true
     this.priorities = []
     for (const controller of this.pending.values()) controller.abort('suspended')
@@ -142,8 +146,23 @@ export class FrameLoader {
     }
   }
 
+  private clearRetry() {
+    clearTimeout(this.retryTimer)
+    this.retryTimer = undefined
+  }
+
+  private deferRetry() {
+    if (this.retryTimer !== undefined) return
+    // Yield after genuine failures. WebKit can cancel navigation fetches before pagehide;
+    // synchronous retries in that departing document trigger access-control diagnostics.
+    this.retryTimer = setTimeout(() => {
+      this.retryTimer = undefined
+      this.pump()
+    }, 100)
+  }
+
   private pump() {
-    if (this.disposed || this.paused) return
+    if (this.disposed || this.paused || this.retryTimer !== undefined) return
     for (const index of this.priorities) {
       if (this.pending.size >= this.options.concurrency) break
       if (this.cache.has(index) || this.pending.has(index) || (this.failures.get(index) ?? 0) >= 2) continue
@@ -155,7 +174,7 @@ export class FrameLoader {
     const controller = new AbortController()
     this.pending.set(index, controller)
     const timeout = setTimeout(() => controller.abort('timeout'), this.options.timeoutMs)
-    void decodeFrame(publicAsset(framePath(this.manifest, index)), controller.signal).then((frame) => {
+    void decodeFrame(frameUrl(this.manifest, index), controller.signal, index === this.wanted).then((frame) => {
       if (this.disposed || controller.signal.aborted || !this.priorities.includes(index)) {
         frame.close()
         return
@@ -171,6 +190,7 @@ export class FrameLoader {
       if (this.disposed || (controller.signal.aborted && controller.signal.reason !== 'timeout')) return
       const attempts = (this.failures.get(index) ?? 0) + 1
       this.failures.set(index, attempts)
+      this.deferRetry()
       if (attempts >= 2) this.changed(index, true)
     }).finally(() => {
       clearTimeout(timeout)

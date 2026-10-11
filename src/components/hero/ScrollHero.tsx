@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useMotionValue } from 'motion/react'
 import { ArrowUpRight } from 'lucide-react'
@@ -13,17 +13,19 @@ export function ScrollHero({ navigation }: { navigation?: ReactNode }) {
   const section = useRef<HTMLElement>(null)
   const viewport = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
+  // Latch the media profile for this page view: resizing changes layout/cache, never restarts the sequence.
+  const [manifestPath] = useState(() => window.innerWidth < 768 ? siteConfig.hero.mobileManifestPath : siteConfig.hero.manifestPath)
   // Frames and storytelling share one deterministic progress value.
   const progress = useMotionValue(0)
   const { staticMode, fail } = useHeroMode(section)
-  useHeroSequence({ section, viewport, canvas, progress, enabled: !staticMode, manifestPath: siteConfig.hero.manifestPath, onUnavailable: fail })
+  useHeroSequence({ section, viewport, canvas, progress, enabled: !staticMode, manifestPath, onUnavailable: fail })
 
   return (
     <section id="home" tabIndex={-1} ref={section} className="scroll-hero" data-static={staticMode} aria-labelledby="hero-heading" aria-describedby="hero-description">
       <div ref={viewport} className="hero-viewport">
         <img
           className="hero-poster" src={publicAsset(siteConfig.hero.posterPath)}
-          width="1280" height="720" alt="" fetchPriority="high" decoding="async"
+          width="960" height="540" alt="" fetchPriority="high" decoding="async"
           onError={(event) => { event.currentTarget.hidden = true }}
         />
         <canvas ref={canvas} className="hero-canvas" aria-hidden="true" />

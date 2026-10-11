@@ -1,4 +1,5 @@
 export interface FrameManifest {
+  assetVersion?: string
   frameCount: number
   fps: number
   durationSeconds: number
@@ -24,9 +25,17 @@ export function framePath(manifest: FrameManifest, index: number) {
   return manifest.filenamePattern.replace('%04d', String(index + 1).padStart(4, '0'))
 }
 
+export function frameUrl(manifest: FrameManifest, index: number, base?: string) {
+  const url = publicAsset(framePath(manifest, index), base)
+  return manifest.assetVersion ? `${url}?v=${manifest.assetVersion}` : url
+}
+
 export function parseManifest(value: unknown): FrameManifest {
   if (!value || typeof value !== 'object') throw new Error('Invalid frame manifest')
   const m = value as Record<string, unknown>
+  if (m.assetVersion !== undefined && (typeof m.assetVersion !== 'string' || !/^[a-f0-9]{16,64}$/.test(m.assetVersion))) {
+    throw new Error('Invalid asset fingerprint')
+  }
   for (const key of ['frameCount', 'fps', 'durationSeconds', 'width', 'height']) {
     if (typeof m[key] !== 'number' || !Number.isFinite(m[key]) || m[key] <= 0) {
       throw new Error(`Invalid manifest ${key}`)
@@ -39,7 +48,7 @@ export function parseManifest(value: unknown): FrameManifest {
     if (typeof m[key] !== 'string') throw new Error(`Invalid manifest ${key}`)
     publicAsset(m[key] as string)
   }
-  if (!/^\/frames\/[\w-]+_%04d\.jpg$/.test(String(m.filenamePattern))) throw new Error('Unsupported frame pattern')
+  if (!/^\/frames\/(?:[\w-]+\/)*[\w-]+_%04d\.(?:jpg|webp)$/.test(String(m.filenamePattern))) throw new Error('Unsupported frame pattern')
   const manifest = m as unknown as FrameManifest
   if (manifest.firstFrame !== framePath(manifest, 0) ||
       manifest.lastFrame !== framePath(manifest, manifest.frameCount - 1)) throw new Error('Manifest endpoints do not match')

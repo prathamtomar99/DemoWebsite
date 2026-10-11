@@ -8,7 +8,7 @@ async page => {
   const state=()=>page.locator('[data-story]').evaluateAll(ns=>ns.map(n=>({id:n.dataset.story,opacity:Number(getComputedStyle(n).opacity),hidden:n.getAttribute('aria-hidden'),inert:n.inert,tab:n.querySelector('a')?.tabIndex,visible:n.dataset.active})));
   const seek=async p=>{
     await page.evaluate(p=>scrollTo(0,(document.querySelector('#home').offsetHeight-document.querySelector('.hero-viewport').offsetHeight)*p),p);
-    await page.waitForFunction(p=>Number(document.querySelector('canvas').dataset.paintedFrame)===Math.round(p*239)+1,p);
+    await page.waitForFunction(p=>Number(document.querySelector('canvas').dataset.paintedFrame)===Math.round(p*(Number(document.querySelector('canvas').dataset.frameCount)-1))+1,p);
     await page.waitForTimeout(70);
     return state();
   };
@@ -55,7 +55,7 @@ async page => {
   }
   // A stalled manifest cannot freeze text progress or delay the entrance.
   await page.setViewportSize({width:1440,height:900});
-  await page.route('**/frames/manifest.json',async r=>{await new Promise(resolve=>setTimeout(resolve,2500));await r.continue()});
+  await page.route('**/frames/**/manifest.json',async r=>{await new Promise(resolve=>setTimeout(resolve,2500));await r.continue()});
   await page.goto('http://127.0.0.1:5173/');
   await page.waitForTimeout(1700);
   check(await page.locator('h1').evaluate(n=>getComputedStyle(n).opacity==='1'),'Loading blocked intro');

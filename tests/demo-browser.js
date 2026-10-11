@@ -6,7 +6,7 @@ async page => {
   await page.setViewportSize({width,height});await page.goto('http://127.0.0.1:4173/');await page.reload();await page.waitForTimeout(1800);
   for(const p of [0,.25,.65,.95]){
    await page.evaluate(p=>scrollTo(0,(document.querySelector('#home').offsetHeight-innerHeight)*p),p);
-   await page.waitForFunction(p=>+document.querySelector('canvas').dataset.paintedFrame===Math.round(p*239)+1,p);
+   await page.waitForFunction(p=>+document.querySelector('canvas').dataset.paintedFrame===Math.round(p*(Number(document.querySelector('canvas').dataset.frameCount)-1))+1,p);
    const path=`artifacts/batch7/${width}-hero-${Math.round(p*100)}.png`;await page.screenshot({path});screenshots.push(path);
   }
   for(const id of ['properties','about','approach','contact']){

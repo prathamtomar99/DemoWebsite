@@ -4,6 +4,7 @@ export const siteConfig = {
   sourceVideoPath: 'assets/source/DroneVideo.mp4',
   hero: {
     manifestPath: '/frames/manifest.json',
-    posterPath: '/media/hero-poster.jpg',
+    mobileManifestPath: '/frames/v2/mobile/manifest.json',
+    posterPath: '/media/hero-poster.webp',
   },
 } as const

@@ -1,5 +1,8 @@
 # Batch 2 — Hero asset verification
 
+> Historical batch record. Current optimized profiles, loader limits, measurements, and verification supersede the asset/runtime numbers below: see [HERO_PERFORMANCE_OPTIMIZATION.md](HERO_PERFORMANCE_OPTIMIZATION.md).
+
+
 ## Source inspection
 
 Inspected with FFmpeg/ffprobe 9.0.2 after the user approved Homebrew installation. Context7 was callable and supplied FFmpeg CLI documentation; no external video API or generation service was used. No Node dependencies were added.

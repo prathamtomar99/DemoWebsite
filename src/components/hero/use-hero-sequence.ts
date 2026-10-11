@@ -29,6 +29,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     const resourceOptions = () => matchMedia('(max-width: 767px), (pointer: coarse)').matches ? mobileLoader : desktopLoader
     let disposed = false
     let near = false
+    let pageActive = true
     let raf = 0
     let loader: FrameLoader | undefined
     let manifest: FrameManifest | undefined
@@ -53,7 +54,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
 
     function update() {
       raf = 0
-      if (disposed || !near || document.hidden) return
+      if (disposed || !pageActive || !near || document.hidden) return
       const rect = outer!.getBoundingClientRect()
       const bounds = stage!.getBoundingClientRect()
       const value = scrollProgress(rect.top, rect.height, bounds.height)
@@ -94,7 +95,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     }
 
     function schedule() {
-      if (!disposed && near && !document.hidden && !raf) raf = requestAnimationFrame(update)
+      if (!disposed && pageActive && near && !document.hidden && !raf) raf = requestAnimationFrame(update)
     }
 
     const intersection = new IntersectionObserver(([entry]) => {
@@ -110,6 +111,17 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
       if (document.hidden) loader?.suspend()
       else schedule()
     }
+    const pageHidden = () => {
+      pageActive = false
+      cancelAnimationFrame(raf)
+      raf = 0
+      // Navigation can cancel fetches before React unmounts. Do not retry in a departing document.
+      loader?.suspend()
+    }
+    const pageShown = () => {
+      pageActive = true
+      schedule()
+    }
     const contextLost = (event: Event) => {
       event.preventDefault()
       surface.dataset.ready = 'false'
@@ -118,13 +130,16 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     surface.addEventListener('contextrestored', schedule)
     window.addEventListener('scroll', schedule, { passive: true })
     window.addEventListener('resize', schedule, { passive: true })
-    window.addEventListener('pageshow', schedule)
+    window.addEventListener('pagehide', pageHidden)
+    window.addEventListener('pageshow', pageShown)
     document.addEventListener('visibilitychange', visibility)
 
     void fetch(publicAsset(manifestPath), { signal: abort.signal }).then(async (response) => {
       if (!response.ok) throw new Error('Manifest unavailable')
       manifest = parseManifest(await response.json())
       if (disposed) return
+      surface.dataset.frameCount = String(manifest.frameCount)
+      surface.dataset.manifest = manifestPath
       const options = resourceOptions()
       loader = new FrameLoader(manifest, options, (index, failed) => {
         if (disposed) return
@@ -147,7 +162,8 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
       loader?.dispose()
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
-      window.removeEventListener('pageshow', schedule)
+      window.removeEventListener('pagehide', pageHidden)
+      window.removeEventListener('pageshow', pageShown)
       document.removeEventListener('visibilitychange', visibility)
       surface.removeEventListener('contextlost', contextLost)
       surface.removeEventListener('contextrestored', schedule)

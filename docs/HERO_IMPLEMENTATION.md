@@ -1,5 +1,8 @@
 # Batch 3 — Cinematic hero implementation
 
+> Historical batch record. Current optimized profiles, loader limits, measurements, and verification supersede the asset/runtime numbers below: see [HERO_PERFORMANCE_OPTIMIZATION.md](HERO_PERFORMANCE_OPTIMIZATION.md).
+
+
 ## Scope and specification ownership
 
 The scroll-controlled hero is implemented in the existing Vite/React application. The four text stages, property listings, forms, and final navigation remain unimplemented. Static identity text and a clearly marked development section provide a way to verify the hero and its release. The main specifications were not changed.
