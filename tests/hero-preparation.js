@@ -25,7 +25,7 @@ async page => {
     await page.screenshot({path:`artifacts/cinematic-preloader/preparing-${width}.png`});
     await page.waitForFunction(()=>document.querySelector('#home').dataset.preparing==='false');
     const reveal=await page.evaluate(()=>({time:performance.now(),decoded:window.__preparationAudit.decoded,cache:+document.querySelector('#home').dataset.cacheSize,ready:document.querySelector('canvas').dataset.ready}));
-    check(reveal.ready==='true'&&reveal.cache>=3,'Revealed before initial decode window');
+    check(reveal.ready==='true'&&reveal.cache===(width===375?60:72),'Revealed before initial decode window');
     await page.waitForTimeout(1700);
     check(await page.locator('h1').evaluate(n=>getComputedStyle(n).opacity==='1'),'Entrance failed after reveal');
     await page.evaluate(()=>dispatchEvent(new PageTransitionEvent('pagehide',{persisted:true})));
@@ -38,10 +38,10 @@ async page => {
     await page.waitForFunction(()=>+document.querySelector('#home').dataset.compressedReady===+document.querySelector('canvas').dataset.frameCount,null,{timeout:20000});
     const warmed=await page.evaluate(()=>({...window.__preparationAudit,cache:+document.querySelector('#home').dataset.cacheSize,frames:+document.querySelector('canvas').dataset.frameCount}));
     check(warmed.duplicates.length===0&&warmed.peak<=2,'Duplicate/concurrent requests');
-    check(warmed.decoded===3&&warmed.cache===3,'Warmup decoded full sequence');
+    check(warmed.decoded===warmed.frames&&warmed.cache===warmed.frames,'Full sequence was not retained');
     check(warmed.requests.every(u=>u.includes(width===375?'/mobile/':'/desktop/')),'Fetched wrong profile');
     await page.screenshot({path:`artifacts/cinematic-preloader/revealed-${width}.png`});
-    await page.reload();check(await page.locator('#home').getAttribute('data-preparing')==='false','Reload overlay interfered with restoration');
+    await page.reload();await page.waitForFunction(()=>document.querySelector('#home').dataset.preparing==='false');
     await page.waitForFunction(()=>document.querySelector('canvas').dataset.ready==='true');
     outcomes.push({width,reveal,warmed});
   }
@@ -49,7 +49,7 @@ async page => {
   await page.goto(base,{waitUntil:'domcontentloaded'});
   await page.waitForFunction(()=>document.querySelector('#home').dataset.preparing==='false');
   const deadline=await page.evaluate(()=>performance.now());
-  check(deadline<3200,'Preparation deadline exceeded');
+  check(deadline>=3500&&deadline<10000,'Slow manifest revealed prematurely or preparation stalled');
   check(await page.locator('.hero-poster').evaluate(n=>n.complete&&n.naturalWidth>0),'Deadline lost poster');
   await page.waitForTimeout(1700);check(await page.locator('h1').evaluate(n=>getComputedStyle(n).opacity==='1'),'Timeout stranded entrance');
   await page.unrouteAll({behavior:'wait'});

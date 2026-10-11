@@ -1,8 +1,9 @@
 import { useEffect } from 'react'
 import type { RefObject } from 'react'
 import type { MotionValue } from 'motion/react'
-import { FrameTransport, connectionAllowsWarmup } from './frame-transport'
-import type { FrameConnection } from './frame-transport'
+import { FrameTransport } from './frame-transport'
+import { decodedSequenceBytes, sequenceBudget } from './full-frame-policy'
+import type { PreparationProgress } from './full-frame-policy'
 import { FrameLoader, desktopLoader, mobileLoader } from './frame-loader'
 import { paintFrame } from './canvas-renderer'
 import { parseManifest, publicAsset, scrollProgress } from './manifest'
@@ -18,7 +19,7 @@ interface SequenceOptions {
   enabled: boolean
   manifestPath: string
   onUnavailable: () => void
-  onPrepared: (count: number) => void
+  onPrepared: (progress: PreparationProgress) => void
 }
 
 export function useHeroSequence({ section, viewport, canvas, progress, enabled, manifestPath, onUnavailable, onPrepared }: SequenceOptions) {
@@ -31,6 +32,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
       onUnavailable()
       return
     }
+    onPrepared({ downloaded: 0, decoded: 0, total: 0, ready: false })
     const resourceOptions = () => matchMedia('(max-width: 767px), (pointer: coarse)').matches ? mobileLoader : desktopLoader
     let disposed = false
     let near = false
@@ -38,12 +40,29 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     let raf = 0
     let loader: FrameLoader | undefined
     let transport: FrameTransport | undefined
-    let prepared = 0
-    const connection = (navigator as Navigator & { connection?: FrameConnection }).connection
-    function warm() {
-      transport?.warm(siteConfig.hero.preparation && prepared >= 3 && near && pageActive && !document.hidden &&
-        document.readyState === 'complete' && connectionAllowsWarmup(connection))
+    let downloaded = 0
+    let finished = false
+    let failed = false
+    const started = performance.now()
+    function unavailable(reason: string) {
+      if (disposed || failed) return
+      failed = true
+      outer!.dataset.preparationFailure = reason
+      if (import.meta.env.DEV) console.info(`[Hero preparation] ${reason}`)
+      onUnavailable()
     }
+    function report(ready = false) {
+      if (!manifest || disposed || failed || finished) return
+      const decoded = loader?.stats.cached ?? 0
+      outer!.dataset.decodedReady = String(decoded)
+      onPrepared({ downloaded, decoded, total: manifest.frameCount, ready })
+      if (ready) {
+        finished = true
+        clearTimeout(safetyTimeout)
+        outer!.dataset.preparationMs = String(performance.now() - started)
+      }
+    }
+    const safetyTimeout = setTimeout(() => unavailable('safety-timeout'), siteConfig.hero.preparationTimeoutMs)
     let manifest: FrameManifest | undefined
     let wanted = -1
     let painted = -1
@@ -59,7 +78,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     let renders = 0
     const background = getComputedStyle(stage).backgroundColor
     const abort = new AbortController()
-    const manifestTimeout = setTimeout(() => abort.abort('timeout'), 12000)
+    const manifestTimeout = setTimeout(() => abort.abort('timeout'), siteConfig.hero.preparationTimeoutMs)
 
     function stats() {
       if (!loader) return
@@ -71,13 +90,13 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
 
     function update() {
       raf = 0
-      if (disposed || !pageActive || !near || document.hidden) return
+      if (disposed || failed || !pageActive || !near || document.hidden) return
       const rect = outer!.getBoundingClientRect()
       const bounds = stage!.getBoundingClientRect()
       const value = scrollProgress(rect.top, rect.height, bounds.height)
       progress.set(value)
       // Storytelling remains responsive while the manifest or first image loads.
-      if (!manifest || !loader) return
+      if (!manifest || !loader || loader.stats.cached !== manifest.frameCount) return
       const resources = resourceOptions()
       const blending = siteConfig.hero.blending
       const sample = frameBlend(value, manifest.frameCount, {
@@ -125,13 +144,10 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
           }
         } catch {
           surface!.dataset.ready = 'false'
-          onUnavailable()
+          unavailable('canvas-render-failed')
         }
       }
-      if (painted >= 0 && prepared < 3) {
-        const count = Math.min(3, loader.stats.cached)
-        if (count !== prepared) { prepared = count; onPrepared(count); warm() }
-      }
+      if (painted >= 0) report(true)
       stats()
     }
 
@@ -141,9 +157,9 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
 
     const intersection = new IntersectionObserver(([entry]) => {
       near = entry.isIntersecting
-      if (near) schedule()
+      if (near) { loader?.prepareAll(); schedule() }
       else loader?.suspend()
-      warm()
+
     }, { rootMargin: '50% 0px' })
     intersection.observe(outer)
     const resize = new ResizeObserver(schedule)
@@ -151,8 +167,8 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     resize.observe(outer)
     const visibility = () => {
       if (document.hidden) loader?.suspend()
-      else schedule()
-      warm()
+      else { loader?.prepareAll(); schedule() }
+
     }
     const pageHidden = () => {
       pageActive = false
@@ -160,11 +176,11 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
       raf = 0
       // Navigation can cancel fetches before React unmounts. Do not retry in a departing document.
       loader?.suspend()
-      warm()
+
     }
     const pageShown = () => {
       pageActive = true
-      warm()
+      loader?.prepareAll()
       schedule()
     }
     const contextLost = (event: Event) => {
@@ -178,8 +194,8 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     window.addEventListener('pagehide', pageHidden)
     window.addEventListener('pageshow', pageShown)
     document.addEventListener('visibilitychange', visibility)
-    window.addEventListener('load', warm)
-    connection?.addEventListener('change', warm)
+    const navigate = () => { if (!finished && location.hash && location.hash !== '#home') unavailable('navigation-bypass') }
+    window.addEventListener('hashchange', navigate)
 
     void fetch(publicAsset(manifestPath), { signal: abort.signal }).then(async (response) => {
       if (!response.ok) throw new Error('Manifest unavailable')
@@ -187,17 +203,32 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
       if (disposed) return
       surface.dataset.frameCount = String(manifest.frameCount)
       surface.dataset.manifest = manifestPath
-      const options = resourceOptions()
-      transport = new FrameTransport(manifest, count => { outer.dataset.compressedReady = String(count) })
-      loader = new FrameLoader(manifest, options, transport, (index, failed) => {
+      if (typeof createImageBitmap !== 'function') { unavailable('bitmap-unavailable'); return }
+      const bytes = decodedSequenceBytes(manifest.frameCount, manifest.width, manifest.height)
+      const memory = (navigator as Navigator & { deviceMemory?: number }).deviceMemory
+      const budget = sequenceBudget(manifest.width <= 720, memory,
+        siteConfig.hero.decodedBudgetMiB.desktop, siteConfig.hero.decodedBudgetMiB.mobile)
+      outer.dataset.decodedBytes = String(bytes)
+      outer.dataset.decodedBudget = String(budget)
+      if (bytes > budget) { unavailable('memory-budget'); return }
+      const options = { ...resourceOptions(), maxFrames: manifest.frameCount, maxBytes: budget }
+      transport = new FrameTransport(manifest, count => {
+        downloaded = count
+        outer.dataset.compressedReady = String(count)
+        report()
+      })
+      loader = new FrameLoader(manifest, options, transport, (_index, frameFailed) => {
         if (disposed) return
         stats()
-        if (failed && painted < 0 && loader?.isUnavailable(current) && loader.isUnavailable(next)) onUnavailable()
-        else if (index === current || index === next || prepared < 3) schedule()
+        report()
+        if (frameFailed) unavailable('frame-failed-after-retry')
+        else schedule()
       })
+      if (near && pageActive && !document.hidden) loader.prepareAll()
+      report()
       schedule()
     }).catch(() => {
-      if (!disposed) onUnavailable()
+      if (!disposed) unavailable('manifest-unavailable')
     }).finally(() => clearTimeout(manifestTimeout))
 
     return () => {
@@ -209,8 +240,8 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
       resize.disconnect()
       loader?.dispose()
       transport?.dispose()
-      window.removeEventListener('load', warm)
-      connection?.removeEventListener('change', warm)
+      clearTimeout(safetyTimeout)
+      window.removeEventListener('hashchange', navigate)
       window.removeEventListener('scroll', schedule)
       window.removeEventListener('resize', schedule)
       window.removeEventListener('pagehide', pageHidden)

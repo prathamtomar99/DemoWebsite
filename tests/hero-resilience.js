@@ -72,7 +72,7 @@ async page => {
     resize.push(await page.evaluate(()=>({width:innerWidth,height:innerHeight,canvasWidth:document.querySelector('canvas').width,canvasHeight:document.querySelector('canvas').height,capacity:document.querySelector('#home').dataset.cacheCapacity,overflow:document.documentElement.scrollWidth>innerWidth})));
   }
   check(resize.every(r=>!r.overflow && r.canvasWidth>0),'Resize caused overflow or empty canvas');
-  check(resize[0].capacity==='6','Resized mobile retained desktop memory budget');
+  check(resize[0].capacity===String(count),'Resize changed the latched full-sequence memory ceiling');
   await page.goto(base);
   await waitFrame(1);
   // Many distant seeks exercise eviction, reversal, and decoded-resource release.
@@ -80,7 +80,7 @@ async page => {
     await seek(p); await waitFrame(at(p));
   }
   const memory = await page.evaluate(()=>({...window.__heroMetrics,cache:Number(document.querySelector('#home').dataset.cacheSize)}));
-  check(memory.openBitmaps<=12 && memory.peakBitmaps<=14 && memory.maxInflight<=2,'Unbounded decoded cache or concurrency');
+  check(memory.openBitmaps===count && memory.peakBitmaps<=count && memory.maxInflight<=2,'Unbounded decoded cache or concurrency');
   await page.emulateMedia({reducedMotion:'reduce'});
   await page.waitForTimeout(100);
   check(await page.evaluate(()=>window.__heroMetrics.openBitmaps)===0,'Bitmap leak after disabling sequence');
@@ -89,13 +89,13 @@ async page => {
   await waitFrame(1);
   let failures = 0;
   await page.route(missing, async route => { failures++; await route.fulfill({status:404,body:'Missing test frame'}); });
-  await seek(.5);
-  await page.waitForTimeout(400);
+  await page.goto(base);
+  await page.waitForFunction(()=>document.querySelector('#home').dataset.static==='true');
   const held=await page.locator('canvas').getAttribute('data-painted-frame');
   const missingState=await page.locator('canvas').evaluate(c=>({...c.dataset}));
-  check(held===String(Math.floor(.5*(count-1))+1) && missingState.blendAlpha==='0' && missingState.ready==='true' && failures===2,'Missing nearest frame did not use the valid adjacent fallback or retry was unbounded');
-  await seek(1); await waitFrame(count);
+  check(missingState.ready!=='true' && failures===2,'Incomplete sequence was revealed or retry was unbounded');
   await page.unroute(missing);
+  await page.goto(base); await waitFrame(1); await seek(1); await waitFrame(count);
   await page.route('**/frames/manifest.json',route=>route.fulfill({status:200,contentType:'application/json',body:'{"frameCount":0}'}));
   await page.goto(base);
   await page.waitForFunction(()=>document.querySelector('#home').dataset.static==='true');

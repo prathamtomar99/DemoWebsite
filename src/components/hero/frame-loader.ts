@@ -52,6 +52,7 @@ async function decodeFrame(transport: FrameTransport, index: number, signal: Abo
 
 /** One request+decode pool. Superseded decodes occupy their slot until settled. */
 export class FrameLoader {
+  private retaining = false
   private cache = new Map<number, DecodedFrame>()
   private pending = new Map<number, AbortController>()
   private failures = new Map<number, number>()
@@ -77,8 +78,17 @@ export class FrameLoader {
     this.capacity = Math.max(2, Math.min(options.maxFrames, Math.floor(options.maxBytes / (manifest.width * manifest.height * 4))))
   }
 
+  prepareAll() {
+    if (this.capacity < this.manifest.frameCount) throw new Error('Decoded sequence exceeds memory ceiling')
+    this.retaining = true
+    if (this.wanted < 0) this.wanted = 0
+    this.paused = false
+    this.priorities = Array.from({ length: this.manifest.frameCount }, (_, index) => index)
+    this.pump()
+  }
+
   configure(options: LoaderOptions) {
-    if (options === this.options) return
+    if (this.retaining || options === this.options) return
     this.options = options
     this.capacity = Math.max(2, Math.min(options.maxFrames, Math.floor(options.maxBytes / (this.manifest.width * this.manifest.height * 4))))
     this.paused = true
@@ -109,6 +119,11 @@ export class FrameLoader {
 
   want(index: number, direction: number, companion = -1) {
     if (this.disposed) return
+    if (this.retaining) {
+      this.wanted = index
+      if (this.paused) this.prepareAll()
+      return
+    }
     if (this.wanted === index && this.direction === direction && this.companion === companion && !this.paused) return
     if (index !== this.wanted) this.clearRetry()
     this.transport.prioritize(index, direction)

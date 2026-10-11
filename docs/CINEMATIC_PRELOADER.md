@@ -1,5 +1,7 @@
 # Cinematic preparation and compressed cache warm-up
 
+> Historical three-frame strategy. The explicitly requested replacement is documented in [FULL_FRAME_PRELOADER.md](FULL_FRAME_PRELOADER.md).
+
 ## Scope and implementation
 
 The existing 72-frame desktop / 60-frame mobile WebPs, 35–65% smoothstep blending, decoded cache ceilings (12 / 6), two decoding slots, rendering pipeline, four story ranges, and website interactions are preserved. No asset regeneration, dependencies, service worker, persistent application cache, commit, push, or deployment.

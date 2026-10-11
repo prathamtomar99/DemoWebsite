@@ -17,7 +17,7 @@ async page => {
    await tab.evaluate(p=>scrollTo(0,(document.querySelector('#home').offsetHeight-document.querySelector('.hero-viewport').offsetHeight)*p),p)
    await tab.waitForFunction(p=>+document.querySelector('canvas').dataset.paintedFrame===Math.round(p*59)+1,p)
    const sample=await tab.evaluate(()=>({cache:+document.querySelector('#home').dataset.cacheSize,capacity:+document.querySelector('#home').dataset.cacheCapacity,...window.__soak}))
-   if(sample.cache>6||sample.capacity!==6||sample.live>6||sample.peak>8)throw new Error('Soak cache/bitmap growth')
+   if(sample.cache!==60||sample.capacity!==60||sample.live!==60||sample.peak>60)throw new Error('Soak cache/bitmap growth')
    samples.push(sample)
    const renders=await tab.locator('canvas').getAttribute('data-render-count')
    await tab.waitForTimeout(3000)

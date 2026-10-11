@@ -19,8 +19,12 @@ export function ScrollHero({ navigation }: { navigation?: ReactNode }) {
   const [manifestPath] = useState(() => window.innerWidth < 768 ? siteConfig.hero.mobileManifestPath : siteConfig.hero.manifestPath)
   // Frames and storytelling share one deterministic progress value.
   const progress = useMotionValue(0)
-  const { staticMode, fail } = useHeroMode(section)
-  const { preparing, prepared, report } = useHeroPreparation(staticMode, progress)
+  const mode = useHeroMode(section)
+  // Lower-page entry stays a static, usable page without downloading the sequence.
+  const [bypass] = useState(() => (!!location.hash && location.hash !== '#home') || !siteConfig.hero.preparation)
+  const staticMode = mode.staticMode || bypass
+  const fail = mode.fail
+  const { preparing, prepared, report } = useHeroPreparation(staticMode)
   useHeroSequence({ section, viewport, canvas, progress, enabled: !staticMode, manifestPath, onUnavailable: fail, onPrepared: report })
 
   return (
@@ -32,7 +36,7 @@ export function ScrollHero({ navigation }: { navigation?: ReactNode }) {
           onError={(event) => { event.currentTarget.hidden = true }}
         />
         <canvas ref={canvas} className="hero-canvas" aria-hidden="true" />
-        <div className="hero-overlay">
+        <div className="hero-overlay" inert={preparing}>
           <div className="hero-topline flex items-center justify-between">
             <a className="hero-brand" href="#home" aria-label={`${siteConfig.brandName}, home`}>{siteConfig.brandName}</a>
             <a className="hero-skip" href="#after-hero">{staticMode ? 'Continue' : 'Skip the film'}<ArrowUpRight aria-hidden="true" size={16} /></a>

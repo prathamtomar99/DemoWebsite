@@ -72,7 +72,7 @@ To regenerate all six comparison profiles outside deployment output:
 npm run prepare:hero -- --candidates
 ```
 
-Candidates live under ignored `artifacts/hero-optimization/candidates/`. Only selected desktop/mobile assets ship. The runtime selects mobile below 768 CSS pixels on page mount, then keeps that profile through resize/orientation; layout and cache limits still adapt. This prevents repeated downloads and stale cross-profile paints. Reload after changing between radically different window sizes to select another resolution.
+Candidates live under ignored `artifacts/hero-optimization/candidates/`. Only selected desktop/mobile assets ship. The runtime selects mobile below 768 CSS pixels on page mount, then keeps that profile through resize/orientation; layout still adapts; the full decoded retention ceiling stays with the selected profile. This prevents repeated downloads and stale cross-profile paints. Reload after changing between radically different window sizes to select another resolution.
 
 Manifest paths are public URL paths (`/frames/...`, `/media/...`), not paths containing `public/`. When deploying beneath a non-root Vite base in a later batch, resolve these paths against `import.meta.env.BASE_URL`. The manifest's `frameTimesSeconds` records selected source timestamps; `sourceFrameIndices` records exact decoded indices. `fps` is sampling density across source duration, not timed playback. `durationSeconds` describes the source video stream; container/audio duration can differ.
 
@@ -168,3 +168,7 @@ Audit scripts use an existing Playwright installation (set `PLAYWRIGHT_PATH` if 
 ## Scroll-fraction frame blending
 
 See [docs/HERO_FRAME_BLENDING.md](docs/HERO_FRAME_BLENDING.md) for the adjacent-frame renderer, configuration, comparison measurements, and visual limitations. The 72/60 WebP assets and generation pipeline remain unchanged. Blending is controlled by `siteConfig.hero.blending`; `VITE_HERO_BLEND=off npm run build` produces a discrete-rendering build for comparison. No deployment is included.
+
+## Full-frame preparation
+
+The cinematic path now waits for every selected frame to download and decode, retaining 72 desktop or 60 mobile ImageBitmaps through scrolling. This uses approximately 142.4 / 66.7 MiB of decoded pixels, with device-budget checks and a 45-second safety fallback to the poster. Reduced-motion, Save-Data, and direct lower-page anchors bypass preparation. Configuration and measured cold/warm, slow-network, and browser results: [docs/FULL_FRAME_PRELOADER.md](docs/FULL_FRAME_PRELOADER.md).

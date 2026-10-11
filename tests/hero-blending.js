@@ -26,7 +26,7 @@ async page => {
     await settled();check((await state()).ready==='true','Rapid seeks blanked Canvas');
     results.push({width,count:n,mid,freeze:true,reversePixelIdentity:true,endpoints:true});
   }
-  // Verify a valid adjacent fallback, then the existing painted image when neither pair member loads.
+  // Once retained, even unavailable network pair members must not affect blending.
   await page.setViewportSize({width:1440,height:900});
   for(const both of [false,true]){
     await page.goto(base);await settled();
@@ -36,8 +36,8 @@ async page => {
       return route.continue();
     });
     await seek(20.5);await page.waitForTimeout(500);const missing=await state();
-    check(missing.ready==='true'&&missing.blendAlpha==='0','Missing pair blanked or blended');
-    check(missing.paintedFrame===(both?'1':'21'),'Incorrect missing-frame fallback');
+    check(missing.ready==='true'&&+missing.blendAlpha>.3&&+missing.blendAlpha<.7,'Retained pair depended on network availability');
+    check(['21','22'].includes(missing.paintedFrame),'Retained pair selected wrong frame');
     results.push({bothMissing:both,missing});await page.unroute('**/frames/v2/desktop/*.webp*');
   }
   // Fresh arrival mid-hero: a failed nearest image must not discard a pending valid companion.
@@ -46,8 +46,8 @@ async page => {
   await page.route('**/frame_0021.webp*',async r=>{await new Promise(resolve=>setTimeout(resolve,600));await r.continue()});
   await page.goto(base,{waitUntil:'domcontentloaded'});await page.locator('#home').waitFor();
   await page.evaluate(()=>{const h=document.querySelector('#home'),v=document.querySelector('.hero-viewport');scrollTo(0,h.offsetTop+20.55/71*(h.offsetHeight-v.offsetHeight))});
-  await page.waitForFunction(()=>document.querySelector('canvas').dataset.paintedFrame==='21');
-  check(await page.locator('#home').getAttribute('data-static')==='false','Failed nearest image prematurely discarded valid companion');
+  await page.waitForFunction(()=>document.querySelector('#home').dataset.static==='true');
+  check(await page.locator('.hero-poster').evaluate(n=>n.naturalWidth>0),'Incomplete preparation lost poster fallback');
   await page.unrouteAll({behavior:'wait'});
   // A fast second frame must not replace a delayed first frame at progress zero.
   await page.route('**/frame_0001.webp*',async r=>{await new Promise(resolve=>setTimeout(resolve,600));await r.continue()});

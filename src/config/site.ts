@@ -4,6 +4,8 @@ export const siteConfig = {
   sourceVideoPath: 'assets/source/DroneVideo.mp4',
   hero: {
     preparation: import.meta.env?.VITE_HERO_PREPARATION !== 'off',
+    preparationTimeoutMs: Number(import.meta.env?.VITE_HERO_PREPARATION_TIMEOUT_MS) || 45000,
+    decodedBudgetMiB: { desktop: 160, mobile: 80 },
     manifestPath: '/frames/manifest.json',
     mobileManifestPath: '/frames/v2/mobile/manifest.json',
     posterPath: '/media/hero-poster.webp',

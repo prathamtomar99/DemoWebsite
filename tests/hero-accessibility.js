@@ -4,6 +4,7 @@ async page => {
   await page.emulateMedia({reducedMotion:'no-preference'});
   await page.setViewportSize({width:1440,height:900});
   await page.goto('http://127.0.0.1:5173/');
+  await page.waitForFunction(()=>document.querySelector('#home').dataset.preparing==='false');
   await page.locator('.hero-skip').waitFor({state:'visible'});
   await page.keyboard.press('Tab');
   await page.keyboard.press('Tab');

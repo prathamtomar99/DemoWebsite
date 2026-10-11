@@ -208,5 +208,9 @@
 @media (prefers-reduced-motion: reduce), (prefers-reduced-data: reduce) {
   .hero-preparation { display: none; }
 }
-.scroll-hero[data-static='true'] .hero-preparation,
-.hero-viewport:focus-within .hero-preparation { display: none; }
+.scroll-hero[data-static='true'] .hero-preparation { display: none; }
+.preparation-percent { margin-top: 16px; font-variant-numeric: tabular-nums; font-size: .875rem; }
+.preparation-detail { color: var(--muted); font-size: .75rem; margin-top: 8px; }
+.preparation-skip { display: inline-flex; align-items: center; min-height: 44px; margin-top: 24px; font-size: .75rem; text-underline-offset: 4px; pointer-events: auto; }
+.hero-preparation progress::-webkit-progress-value { transition: width .12s linear; }
+.hero-preparation progress::-moz-progress-bar { transition: width .12s linear; }

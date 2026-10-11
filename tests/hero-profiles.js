@@ -9,7 +9,7 @@ async page => {
   await tab.goto('http://127.0.0.1:4173/')
   await tab.waitForFunction(()=>document.querySelector('canvas').dataset.ready==='true')
   check(await tab.locator('canvas').getAttribute('data-frame-count')===String(count),'Incorrect initial profile')
-  check(await tab.locator('#home').getAttribute('data-cache-capacity')===String(width<768?6:12),'Incorrect bounded cache')
+  check(await tab.locator('#home').getAttribute('data-cache-capacity')===String(count),'Incorrect full retained cache')
   for(const p of [0,.5,1,.1,.9,0]){
    await tab.evaluate(p=>scrollTo(0,(document.querySelector('#home').offsetHeight-document.querySelector('.hero-viewport').offsetHeight)*p),p)
    await tab.waitForFunction(n=>+document.querySelector('canvas').dataset.paintedFrame===n,Math.round(p*(count-1))+1)

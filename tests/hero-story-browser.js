@@ -17,6 +17,7 @@ async page => {
     await page.setViewportSize({width,height});
     await page.goto('http://127.0.0.1:5173/');
     const initial=await page.locator('h1').evaluate(n=>Number(getComputedStyle(n).opacity));
+    await page.waitForFunction(()=>document.querySelector('#home').dataset.preparing==='false');
     await page.waitForTimeout(1750);
     check(await page.locator('h1').evaluate(n=>Number(getComputedStyle(n).opacity))===1,'Intro stuck invisible');
     const samples=[];

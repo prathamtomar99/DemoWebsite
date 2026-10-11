@@ -7,6 +7,7 @@ async page => {
   await page.goto('http://127.0.0.1:5173/');
   // Scroll away before the entrance finishes, then return without remounting.
   await seek(.7);
+  await page.waitForFunction(()=>document.querySelector('#home').dataset.preparing==='false');
   await page.waitForTimeout(1700);
   await page.evaluate(()=>scrollTo(0,0));
   await page.waitForTimeout(100);
@@ -30,7 +31,7 @@ async page => {
   await page.emulateMedia({reducedMotion:'no-preference'});
   const layouts=[];
   for(const [width,height] of [[320,568],[390,664],[720,450],[1440,720]]){
-    await page.setViewportSize({width,height});await page.goto('http://127.0.0.1:5173/');await page.waitForTimeout(1700);
+    await page.setViewportSize({width,height});await page.goto('http://127.0.0.1:5173/');await page.waitForFunction(()=>document.querySelector('#home').dataset.preparing==='false');await page.waitForTimeout(1700);
     for(const p of [0,.25,.65,.95]){
       await seek(p);await page.waitForTimeout(100);
       const result=await page.locator('[data-active="true"]').evaluateAll(ns=>ns.every(n=>[...n.querySelectorAll('h1,h2,p,a')].every(c=>{const r=c.getBoundingClientRect();return r.top>=0&&r.bottom<=innerHeight&&r.left>=0&&r.right<=innerWidth})));

@@ -8,7 +8,7 @@ async page => {
  await cdp.send('Network.emulateNetworkConditions',{offline:false,latency:100,downloadThroughput:200000,uploadThroughput:100000})
  await cdp.send('Emulation.setCPUThrottlingRate',{rate:4})
  await page.goto('http://127.0.0.1:4173/')
- await page.waitForFunction(()=>document.querySelector('canvas').dataset.ready==='true')
+ await page.waitForFunction(()=>document.querySelector('canvas').dataset.ready==='true',null,{timeout:60000})
  const seek=p=>page.evaluate(p=>scrollTo(0,(document.querySelector('#home').offsetHeight-document.querySelector('.hero-viewport').offsetHeight)*p),p)
  const samples=[]
  for(let cycle=0;cycle<3;cycle++){
@@ -17,7 +17,7 @@ async page => {
    await page.waitForFunction(p=>+document.querySelector('canvas').dataset.paintedFrame===Math.round(p*59)+1,p,{timeout:15000})
    const state=await page.locator('canvas').evaluate(n=>({...n.dataset}))
    check(state.ready==='true','Blank slow-network Canvas')
-   check(await page.locator('#home').evaluate(n=>+n.dataset.cacheSize<=6&&+n.dataset.inflight<=2),'Resource budget exceeded')
+   check(await page.locator('#home').evaluate(n=>+n.dataset.cacheSize===60&&+n.dataset.inflight<=2),'Resource budget exceeded')
    samples.push({cycle,p,frame:state.paintedFrame})
   }
  }
