@@ -4,6 +4,7 @@ async page => {
   page.on('pageerror', error => errors.push(error.message));
   let manifest = await (await page.request.get('http://127.0.0.1:5173/frames/manifest.json')).json();
   const check = (condition, message) => { if (!condition) throw new Error(message); };
+  const geometry = () => page.evaluate(() => ({section:document.querySelector('#home').offsetHeight,viewport:document.querySelector('.hero-viewport').offsetHeight}));
   const state = () => page.evaluate(() => ({
     painted: Number(document.querySelector('canvas').dataset.paintedFrame),
     wanted: Number(document.querySelector('canvas').dataset.wantedFrame),
@@ -34,6 +35,8 @@ async page => {
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('http://127.0.0.1:5173/');
   await page.waitForFunction(() => document.querySelector('canvas').dataset.paintedFrame === '1');
+  const desktopGeometry = await geometry();
+  check(desktopGeometry.section===4*desktopGeometry.viewport,'Desktop scroll height is not four viewports');
   const start = await state();
   check(!start.overflow, 'Desktop overflow');
   const points = [];
@@ -57,6 +60,8 @@ async page => {
     manifest = await (await page.request.get('http://127.0.0.1:5173'+(width<768?'/frames/v2/mobile/manifest.json':'/frames/manifest.json'))).json();
     await page.goto('http://127.0.0.1:5173/');
     await page.waitForFunction(() => document.querySelector('canvas').dataset.paintedFrame === '1');
+    const layout=await geometry();
+    check(layout.section===4*layout.viewport, `Scroll height at ${width}`);
     check(!(await state()).overflow, `Overflow at ${width}`);
     await page.screenshot({path:`artifacts/hero-${width}.png`});
     sizes.push({width,height,start:await state(),middle:await seek(.5),end:await seek(1)});
@@ -80,5 +85,5 @@ async page => {
   await page.waitForFunction(() => document.querySelector('#home').dataset.static === 'true');
   check((await state()).y === 0,'Live reduced-motion switch lost hero reading position');
   check(errors.length === 0,errors.join('\n'));
-  return {desktop:points, idle:before.painted === after.painted,release,sizes,reduced,reducedSequenceRequests:requests.length,livePreference:true,errors};
+  return {desktopGeometry,desktop:points, idle:before.painted === after.painted,release,sizes,reduced,reducedSequenceRequests:requests.length,livePreference:true,errors};
 }

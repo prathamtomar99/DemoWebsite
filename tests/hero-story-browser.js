@@ -59,7 +59,7 @@ async page => {
   await page.goto('http://127.0.0.1:5173/');
   await page.waitForTimeout(1700);
   check(await page.locator('h1').evaluate(n=>getComputedStyle(n).opacity==='1'),'Loading blocked intro');
-  await page.evaluate(()=>scrollTo(0,3600*.7));await page.waitForTimeout(100);
+  await page.evaluate(()=>{const h=document.querySelector('#home'),v=document.querySelector('.hero-viewport');scrollTo(0,h.offsetTop+(h.offsetHeight-v.offsetHeight)*.7)});await page.waitForTimeout(100);
   check((await state()).find(s=>s.id==='left').opacity===1,'Loading blocked story progress');
   await page.unrouteAll({behavior:'wait'});
   await page.emulateMedia({reducedMotion:'reduce'});

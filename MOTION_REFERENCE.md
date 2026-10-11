@@ -12,7 +12,7 @@ The source contains a visible Gemini watermark. It remains an existing source li
 
 ## Scroll-controlled cinematic stage
 
-Use a section approximately **500vh** tall with a viewport-height child pinned using native CSS `position: sticky; top: 0`. Its active distance is section height minus pinned viewport height, approximately four viewport heights. Keep native wheel, touch, scrollbar, keyboard, and anchor scrolling; do not intercept input or trap the visitor. The following section stays in normal document flow.
+Use a section approximately **400vh** tall on desktop and mobile, configured by the single `--hero-scroll-height: 400svh` token in `src/styles/tokens.css`. Small viewport units preserve the existing mobile toolbar stability. Its viewport-height child remains pinned using native CSS `position: sticky; top: 0`. Active distance is section height minus pinned viewport height: now three viewport heights instead of four. This intentional speed adjustment reduces active scroll distance by 25%, advancing the complete sequence about 33% faster per scrolled pixel. Change this token to tune the distance; never multiply progress or intercept input. Keep native wheel, touch, scrollbar, keyboard, and anchor scrolling. The following section stays in normal document flow. Static reduced-motion/Save-Data modes retain automatic section height and bypass this token.
 
 Render source-derived frames into a canvas. The source video must not autoplay, play on a clock, or provide a parallel playback timeline. Batch 2 prepares assets only. `npm run prepare:hero` generates the verified source sequence; Batch 3 will implement rendering only after user approval. Always read the actual manifest rather than hardcoding the current frame count.
 
@@ -64,7 +64,7 @@ The deterministic index is the requested frame, even during a cache miss. Once i
 
 ## Responsive motion and resource budgets
 
-Desktop and tablet retain the same story and progress mapping. Mobile uses a stable viewport measurement (prefer small viewport units where appropriate) to limit address-bar-induced pin jumps. Retain approximately 500vh on capable mobile devices; text travel is reduced as above. Recompute from the current scroll offset after orientation changes without replaying from the beginning.
+Desktop and tablet retain the same story and progress mapping. Mobile uses a stable viewport measurement (prefer small viewport units where appropriate) to limit address-bar-induced pin jumps. Use the shared approximately 400vh section height on capable mobile devices; text travel is reduced as above. Recompute from the current scroll offset after orientation changes without replaying from the beginning. All four story progress ranges remain unchanged; the finale still reaches full opacity at .96 and holds through 1.00 before sticky release.
 
 The optimized mobile sequence reduces pixel decoding and transfer cost. Variant manifests must map to the same source timeline. Select a variant once per session/viewport change without interrupting the displayed image. Do not upscale the source or require maximum-resolution frames on phones. Start with a decoded-image cache budget around 64 MiB desktop / 24 MiB mobile and tune using actual dimensions and device testing. Respect Save-Data where exposed; absent connection APIs must not break the feature.
 

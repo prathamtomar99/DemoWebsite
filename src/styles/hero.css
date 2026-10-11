@@ -1,7 +1,7 @@
 .scroll-hero {
   --hero-gutter: 20px;
   position: relative;
-  height: 500svh;
+  height: var(--hero-scroll-height);
   background: var(--cinema);
   color: var(--on-dark);
 }
