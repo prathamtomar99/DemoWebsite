@@ -1,4 +1,4 @@
-import { frameUrl } from './manifest'
+import type { FrameTransport } from './frame-transport'
 import type { FrameManifest } from './manifest'
 
 export interface DecodedFrame {
@@ -24,10 +24,8 @@ export const mobileLoader: LoaderOptions = {
   maxFrames: 6, maxBytes: 24 * 1024 ** 2, concurrency: 2, ahead: 2, behind: 0, timeoutMs: 12000,
 }
 
-async function decodeFrame(url: string, signal: AbortSignal, current: boolean): Promise<DecodedFrame> {
-  const response = await fetch(url, { signal, cache: 'force-cache', priority: current ? 'high' : 'low' })
-  if (!response.ok) throw new Error(`Image request failed: ${response.status}`)
-  const blob = await response.blob()
+async function decodeFrame(transport: FrameTransport, index: number, signal: AbortSignal, current: boolean): Promise<DecodedFrame> {
+  const blob = await transport.read(index, signal, current)
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
   if (typeof createImageBitmap === 'function') {
     const image = await createImageBitmap(blob)
@@ -66,11 +64,13 @@ export class FrameLoader {
   private disposed = false
   private retryTimer: ReturnType<typeof setTimeout> | undefined
   capacity: number
+  private transport: FrameTransport
   private manifest: FrameManifest
   private options: LoaderOptions
   private changed: (index: number, failed: boolean) => void
 
-  constructor(manifest: FrameManifest, options: LoaderOptions, changed: (index: number, failed: boolean) => void) {
+  constructor(manifest: FrameManifest, options: LoaderOptions, transport: FrameTransport, changed: (index: number, failed: boolean) => void) {
+    this.transport = transport
     this.manifest = manifest
     this.options = options
     this.changed = changed
@@ -111,6 +111,7 @@ export class FrameLoader {
     if (this.disposed) return
     if (this.wanted === index && this.direction === direction && this.companion === companion && !this.paused) return
     if (index !== this.wanted) this.clearRetry()
+    this.transport.prioritize(index, direction)
     this.wanted = index
     this.companion = companion
     this.direction = direction
@@ -182,7 +183,7 @@ export class FrameLoader {
     const controller = new AbortController()
     this.pending.set(index, controller)
     const timeout = setTimeout(() => controller.abort('timeout'), this.options.timeoutMs)
-    void decodeFrame(frameUrl(this.manifest, index), controller.signal, index === this.wanted).then((frame) => {
+    void decodeFrame(this.transport, index, controller.signal, index === this.wanted).then((frame) => {
       if (this.disposed || controller.signal.aborted || !this.priorities.includes(index)) {
         frame.close()
         return

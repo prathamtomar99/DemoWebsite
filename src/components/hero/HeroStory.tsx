@@ -11,9 +11,10 @@ interface StageProps {
   progress: MotionValue<number>
   focused: MotionValue<string>
   staticMode: boolean
+  revealed: boolean
 }
 
-function StoryPanel({ stage, progress, focused, staticMode }: StageProps) {
+function StoryPanel({ stage, progress, focused, staticMode, revealed }: StageProps) {
   const panel = useRef<HTMLDivElement>(null)
   const isIntro = stage.entrance === 'intro'
   const [entered, setEntered] = useState(staticMode || !isIntro)
@@ -65,7 +66,7 @@ function StoryPanel({ stage, progress, focused, staticMode }: StageProps) {
     const { y, duration, delay } = introEntrance[part]
     return {
       initial: staticMode || !isIntro ? false as const : { opacity: 0, y: `calc(var(--intro-travel) * ${y})` },
-      animate: { opacity: 1, y: 0 },
+      animate: !revealed && isIntro && !staticMode ? { opacity: 0, y: `calc(var(--intro-travel) * ${y})` } : { opacity: 1, y: 0 },
       transition: { duration: staticMode || !isIntro ? 0 : duration, delay: staticMode || !isIntro ? 0 : delay, ease: storyEase },
     }
   }
@@ -81,7 +82,7 @@ function StoryPanel({ stage, progress, focused, staticMode }: StageProps) {
       </div>
       <div className="story-detail-group">
         {stage.description && <motion.p className="story-description" {...entrance('description')}>{stage.description}</motion.p>}
-        {stage.cta && <motion.div className="story-cta-wrap" {...entrance('cta')} onAnimationComplete={() => setEntered(true)}>
+        {stage.cta && <motion.div className="story-cta-wrap" {...entrance('cta')} onAnimationComplete={() => { if (revealed) setEntered(true) }}>
           <a className="story-cta" href={stage.cta.href} tabIndex={-1}>{stage.cta.label}<ArrowUpRight size={17} aria-hidden="true" /></a>
         </motion.div>}
       </div>
@@ -89,10 +90,10 @@ function StoryPanel({ stage, progress, focused, staticMode }: StageProps) {
   )
 }
 
-export function HeroStory({ progress, staticMode }: { progress: MotionValue<number>; staticMode: boolean }) {
+export function HeroStory({ progress, staticMode, revealed = true }: { progress: MotionValue<number>; staticMode: boolean; revealed?: boolean }) {
   // Hold a focused outgoing CTA visibly until focus leaves; suppress other panels.
   const focused = useMotionValue('')
   return <div className="hero-story">
-    {heroStory.map(stage => <StoryPanel key={stage.id} stage={stage} progress={progress} focused={focused} staticMode={staticMode} />)}
+    {heroStory.map(stage => <StoryPanel key={stage.id} stage={stage} progress={progress} focused={focused} staticMode={staticMode} revealed={revealed} />)}
   </div>
 }

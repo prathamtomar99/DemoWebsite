@@ -36,7 +36,7 @@ async page => {
   await page.goto('http://127.0.0.1:5173/');
   await page.waitForFunction(() => document.querySelector('canvas').dataset.paintedFrame === '1');
   const desktopGeometry = await geometry();
-  check(desktopGeometry.section===4*desktopGeometry.viewport,'Desktop scroll height is not four viewports');
+  check(desktopGeometry.section===3.5*desktopGeometry.viewport,'Desktop scroll height differs from the preserved 350svh setting');
   const start = await state();
   check(!start.overflow, 'Desktop overflow');
   const points = [];
@@ -61,7 +61,7 @@ async page => {
     await page.goto('http://127.0.0.1:5173/');
     await page.waitForFunction(() => document.querySelector('canvas').dataset.paintedFrame === '1');
     const layout=await geometry();
-    check(layout.section===4*layout.viewport, `Scroll height at ${width}`);
+    check(layout.section===3.5*layout.viewport, `Scroll height at ${width}`);
     check(!(await state()).overflow, `Overflow at ${width}`);
     await page.screenshot({path:`artifacts/hero-${width}.png`});
     sizes.push({width,height,start:await state(),middle:await seek(.5),end:await seek(1)});

@@ -53,10 +53,11 @@ async page => {
     check(await page.evaluate(()=>document.activeElement.id)==='properties','Final CTA destination');
     screenshots.push({width,initial,samples});
   }
-  // A stalled manifest cannot freeze text progress or delay the entrance.
+  // A stalled manifest must release preparation at its deadline; story progress stays responsive.
   await page.setViewportSize({width:1440,height:900});
   await page.route('**/frames/**/manifest.json',async r=>{await new Promise(resolve=>setTimeout(resolve,2500));await r.continue()});
   await page.goto('http://127.0.0.1:5173/');
+  await page.waitForFunction(()=>document.querySelector('#home').dataset.preparing==='false');
   await page.waitForTimeout(1700);
   check(await page.locator('h1').evaluate(n=>getComputedStyle(n).opacity==='1'),'Loading blocked intro');
   await page.evaluate(()=>{const h=document.querySelector('#home'),v=document.querySelector('.hero-viewport');scrollTo(0,h.offsetTop+(h.offsetHeight-v.offsetHeight)*.7)});await page.waitForTimeout(100);

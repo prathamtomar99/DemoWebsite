@@ -4,6 +4,8 @@ import { useMotionValue } from 'motion/react'
 import { ArrowUpRight } from 'lucide-react'
 import { siteConfig } from '../../config/site'
 import { publicAsset } from './manifest'
+import { HeroPreparation } from './HeroPreparation'
+import { useHeroPreparation } from './use-hero-preparation'
 import { HeroStory } from './HeroStory'
 import { useHeroMode } from './use-hero-mode'
 import { useHeroSequence } from './use-hero-sequence'
@@ -18,10 +20,11 @@ export function ScrollHero({ navigation }: { navigation?: ReactNode }) {
   // Frames and storytelling share one deterministic progress value.
   const progress = useMotionValue(0)
   const { staticMode, fail } = useHeroMode(section)
-  useHeroSequence({ section, viewport, canvas, progress, enabled: !staticMode, manifestPath, onUnavailable: fail })
+  const { preparing, prepared, report } = useHeroPreparation(staticMode, progress)
+  useHeroSequence({ section, viewport, canvas, progress, enabled: !staticMode, manifestPath, onUnavailable: fail, onPrepared: report })
 
   return (
-    <section id="home" tabIndex={-1} ref={section} className="scroll-hero" data-static={staticMode} aria-labelledby="hero-heading" aria-describedby="hero-description">
+    <section id="home" tabIndex={-1} ref={section} className="scroll-hero" data-static={staticMode} data-preparing={preparing} aria-labelledby="hero-heading" aria-describedby="hero-description">
       <div ref={viewport} className="hero-viewport">
         <img
           className="hero-poster" src={publicAsset(siteConfig.hero.posterPath)}
@@ -36,8 +39,9 @@ export function ScrollHero({ navigation }: { navigation?: ReactNode }) {
             {navigation}
           </div>
           <p id="hero-description" className="sr-only">A cinematic view of a contemporary residence, from its landscaped exterior through the entrance into the living space.</p>
-          <HeroStory progress={progress} staticMode={staticMode} />
+          <HeroStory progress={progress} staticMode={staticMode} revealed={!preparing} />
         </div>
+        <HeroPreparation preparing={preparing} prepared={prepared} />
       </div>
     </section>
   )
