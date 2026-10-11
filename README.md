@@ -163,3 +163,8 @@ See [docs/DEMO_HANDOFF.md](docs/DEMO_HANDOFF.md) for the local preview commands,
 See [docs/HERO_PERFORMANCE_OPTIMIZATION.md](docs/HERO_PERFORMANCE_OPTIMIZATION.md) for all six candidates, production scroll measurements, verification, visual tradeoffs, and deployment limitations. The original 240-JPEG sequence is retired from public output. No GitHub push or deployment was performed.
 
 Audit scripts use an existing Playwright installation (set `PLAYWRIGHT_PATH` if it is not at the documented local Homebrew path). `scripts/benchmark-hero.mjs` measures production scrolling; `scripts/serve-hero-candidates.mjs` serves ignored candidate assets only on localhost for comparisons. They do not run in the website.
+
+
+## Scroll-fraction frame blending
+
+See [docs/HERO_FRAME_BLENDING.md](docs/HERO_FRAME_BLENDING.md) for the adjacent-frame renderer, configuration, comparison measurements, and visual limitations. The 72/60 WebP assets and generation pipeline remain unchanged. Blending is controlled by `siteConfig.hero.blending`; `VITE_HERO_BLEND=off npm run build` produces a discrete-rendering build for comparison. No deployment is included.

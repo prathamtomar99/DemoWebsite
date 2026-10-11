@@ -59,6 +59,7 @@ export class FrameLoader {
   private failures = new Map<number, number>()
   private priorities: number[] = []
   private wanted = -1
+  private companion = -1
   private pinned = -1
   private direction = 1
   private paused = true
@@ -88,6 +89,10 @@ export class FrameLoader {
     return { cached: this.cache.size, pending: this.pending.size, capacity: this.capacity }
   }
 
+  isUnavailable(index: number) {
+    return (this.failures.get(index) ?? 0) >= 2
+  }
+
   get(index: number) {
     const entry = this.cache.get(index)
     if (entry) {
@@ -102,21 +107,24 @@ export class FrameLoader {
     this.evict()
   }
 
-  want(index: number, direction: number) {
+  want(index: number, direction: number, companion = -1) {
     if (this.disposed) return
-    if (this.wanted === index && this.direction === direction && !this.paused) return
+    if (this.wanted === index && this.direction === direction && this.companion === companion && !this.paused) return
     if (index !== this.wanted) this.clearRetry()
     this.wanted = index
+    this.companion = companion
     this.direction = direction
     this.paused = false
     const priorities = [index]
+    if (companion >= 0 && Math.abs(companion - index) === 1) priorities.push(companion)
     // Prioritize travel direction. Previously visited frames remain reusable in cache;
     // do not spend constrained bandwidth backfilling frames behind the target.
     for (let step = 1; step <= Math.max(this.options.ahead, this.options.behind); step++) {
       if (step <= this.options.ahead) priorities.push(index + step * direction)
       if (step <= this.options.behind) priorities.push(index - step * direction)
     }
-    this.priorities = priorities.filter((i) => i >= 0 && i < this.manifest.frameCount).slice(0, this.capacity - 1)
+    this.priorities = [...new Set(priorities)].filter((i) => i >= 0 && i < this.manifest.frameCount)
+      .slice(0, Math.min(this.capacity - 1, 1 + this.options.ahead + this.options.behind))
     for (const [i, controller] of this.pending) {
       if (!this.priorities.includes(i)) controller.abort('superseded')
     }

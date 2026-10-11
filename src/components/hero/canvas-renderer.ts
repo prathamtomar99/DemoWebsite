@@ -15,7 +15,8 @@ export function imagePlacement(width: number, height: number, sourceWidth: numbe
   }
 }
 
-export function paintFrame(canvas: HTMLCanvasElement, frame: DecodedFrame, width: number, height: number, background: string) {
+export function paintFrame(canvas: HTMLCanvasElement, frame: DecodedFrame, width: number, height: number, background: string,
+  overlay?: DecodedFrame, alpha = 0) {
   if (!width || !height || !frame.width || !frame.height) return false
   const context = canvas.getContext('2d', { alpha: false })
   if (!context || (typeof context.isContextLost === 'function' && context.isContextLost())) return false
@@ -28,8 +29,17 @@ export function paintFrame(canvas: HTMLCanvasElement, frame: DecodedFrame, width
   }
   const placement = imagePlacement(width, height, frame.width, frame.height)
   context.setTransform(pixelsWide / width, 0, 0, pixelsHigh / height, 0, 0)
+  context.globalAlpha = 1
   context.fillStyle = background
   context.fillRect(0, 0, width, height)
-  context.drawImage(frame.image, placement.x, placement.y, placement.width, placement.height)
+  try {
+    context.drawImage(frame.image, placement.x, placement.y, placement.width, placement.height)
+    if (overlay && alpha > 0 && alpha < 1 && overlay.width === frame.width && overlay.height === frame.height) {
+      context.globalAlpha = alpha
+      context.drawImage(overlay.image, placement.x, placement.y, placement.width, placement.height)
+    }
+  } finally {
+    context.globalAlpha = 1
+  }
   return true
 }

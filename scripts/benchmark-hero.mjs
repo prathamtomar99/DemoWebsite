@@ -5,14 +5,14 @@ const require = createRequire(import.meta.url)
 const { chromium } = require(process.env.PLAYWRIGHT_PATH || '/opt/homebrew/lib/node_modules/@playwright/cli/node_modules/playwright')
 const base = process.env.HERO_URL || 'http://127.0.0.1:4173/'
 const label = process.env.HERO_LABEL || 'baseline'
-const output = 'artifacts/hero-optimization'
+const output = process.env.HERO_OUTPUT || 'artifacts/hero-optimization'
 mkdirSync(output,{recursive:true})
 const browser = await chromium.launch({headless:true,channel:"chrome"})
 const results=[]
 for (const mobile of (process.env.HERO_DEVICE==='mobile'?[true]:process.env.HERO_DEVICE==='desktop'?[false]:[false,true])) {
   const context = await browser.newContext({viewport:mobile?{width:375,height:812}:{width:1440,height:900},deviceScaleFactor:mobile?2:1})
   await context.addInitScript(() => {
-    const m=window.__audit={decode:[],draw:[],liveBytes:0,peakBytes:0,longTasks:[],firstCanvas:null,firstPosterPaint:null,lag:[],blank:0}
+    const m=window.__audit={decode:[],draw:[],liveBytes:0,peakBytes:0,longTasks:[],firstCanvas:null,firstPosterPaint:null,lag:[],blank:0,pairMiss:0,pairSamples:0,cadence:[]}
     new PerformanceObserver(list=>{for(const e of list.getEntries())if(e.identifier==='audit-hero-poster')m.firstPosterPaint??=e.renderTime||e.loadTime}).observe({type:'element',buffered:true})
     const posterObserver=new MutationObserver(()=>{const poster=document.querySelector('.hero-poster');if(poster){poster.setAttribute('elementtiming','audit-hero-poster');posterObserver.disconnect()}})
     posterObserver.observe(document,{subtree:true,childList:true})
@@ -31,6 +31,7 @@ for (const mobile of (process.env.HERO_DEVICE==='mobile'?[true]:process.env.HERO
   const page=await context.newPage()
   const cdp=await context.newCDPSession(page)
   await cdp.send('Network.enable')
+  await cdp.send('Performance.enable')
   for(const cache of ['cold','warm']) {
     if(cache==='cold')await cdp.send('Network.clearBrowserCache')
     const network={requests:0,frames:0,transferred:0,frameTransferred:0,frameBodyTransferred:0,failedFrames:0,cached:0};const frames=new Set()
@@ -48,13 +49,16 @@ for (const mobile of (process.env.HERO_DEVICE==='mobile'?[true]:process.env.HERO
     await page.waitForFunction(()=>document.querySelector('canvas')?.dataset.ready==='true',{},{timeout:30000})
     await page.waitForTimeout(1600)
     const initial=await page.evaluate(()=>({firstCanvas:window.__audit.firstCanvas,posterPaint:window.__audit.firstPosterPaint,poster:performance.getEntriesByType('resource').find(e=>e.name.includes('hero-poster'))?.responseEnd,frameRequests:performance.getEntriesByType('resource').filter(e=>/\/frames\/.*\.(jpg|webp)/.test(e.name)).length}))
+    const beforeTask=(await cdp.send('Performance.getMetrics')).metrics.find(m=>m.name==='TaskDuration')?.value??0
     // 12 seconds forward, six reverse, then distant jumps. Frame state sampled every rAF.
     if(process.env.HERO_STARTUP_ONLY!=='1') await page.evaluate(async()=>{
       const hero=document.querySelector('#home'),canvas=document.querySelector('canvas'),v=document.querySelector('.hero-viewport')
       const seek=p=>scrollTo(0,hero.offsetTop+(hero.offsetHeight-v.offsetHeight)*p)
       for(const [from,to,duration] of [[0,1,12000],[1,0,6000]]){
-        const start=performance.now()
+        const start=performance.now();let previous=start
         await new Promise(resolve=>{const tick=()=>{const p=Math.min(1,(performance.now()-start)/duration);seek(from+(to-from)*p)
+          window.__audit.cadence.push(performance.now()-previous);previous=performance.now()
+          if(canvas.dataset.blendAvailable!==undefined){window.__audit.pairSamples++;if(canvas.dataset.blendAvailable==='false')window.__audit.pairMiss++}
           const wanted=+canvas.dataset.wantedFrame,painted=+canvas.dataset.paintedFrame
           if(wanted&&painted)window.__audit.lag.push(Math.abs(wanted-painted));if(canvas.dataset.ready!=='true')window.__audit.blank++
           if(p<1)requestAnimationFrame(tick);else resolve()};requestAnimationFrame(tick)})
@@ -64,8 +68,9 @@ for (const mobile of (process.env.HERO_DEVICE==='mobile'?[true]:process.env.HERO
     await page.waitForTimeout(500)
     const metrics=await page.evaluate(()=>{
       const m=window.__audit,summary=a=>{const sorted=[...a].sort((a,b)=>a-b);return {n:a.length,median:sorted[Math.floor(a.length*.5)]??0,p95:sorted[Math.floor(a.length*.95)]??0,max:Math.max(0,...a)}}
-      return {decodeMs:summary(m.decode),drawSubmissionMs:summary(m.draw),lagFrames:summary(m.lag),peakDecodedBytes:m.peakBytes,retainedDecodedBytes:m.liveBytes,longTasks:summary(m.longTasks),blankSamples:m.blank,canvas:{...document.querySelector('canvas').dataset},cache:{...document.querySelector('#home').dataset}}
+      return {decodeMs:summary(m.decode),drawSubmissionMs:summary(m.draw),lagFrames:summary(m.lag),peakDecodedBytes:m.peakBytes,retainedDecodedBytes:m.liveBytes,longTasks:summary(m.longTasks),blankSamples:m.blank,pairMissSamples:m.pairMiss,pairSamples:m.pairSamples,rafIntervalMs:summary(m.cadence),canvas:{...document.querySelector('canvas').dataset},cache:{...document.querySelector('#home').dataset}}
     })
+    metrics.scrollMainThreadTaskMs=((await cdp.send('Performance.getMetrics')).metrics.find(m=>m.name==='TaskDuration')?.value??0)*1000-beforeTask*1000
     results.push({label,base,mobile,cache,throttled:process.env.HERO_THROTTLE==='1',initial,network,metrics})
     writeFileSync(`${output}/${label}.json`,JSON.stringify(results,null,2))
     console.log(JSON.stringify(results.at(-1)))

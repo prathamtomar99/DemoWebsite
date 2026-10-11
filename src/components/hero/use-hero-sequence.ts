@@ -3,8 +3,10 @@ import type { RefObject } from 'react'
 import type { MotionValue } from 'motion/react'
 import { FrameLoader, desktopLoader, mobileLoader } from './frame-loader'
 import { paintFrame } from './canvas-renderer'
-import { parseManifest, publicAsset, progressFrame, scrollProgress } from './manifest'
+import { parseManifest, publicAsset, scrollProgress } from './manifest'
 import type { FrameManifest } from './manifest'
+import { frameBlend, availableBlend } from './frame-blend'
+import { siteConfig } from '../../config/site'
 
 interface SequenceOptions {
   section: RefObject<HTMLElement | null>
@@ -35,6 +37,11 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     let manifest: FrameManifest | undefined
     let wanted = -1
     let painted = -1
+    let current = -1
+    let next = -1
+    let lastBase = -1
+    let lastOverlay = -1
+    let lastAlpha = -1
     let direction = 1
     let lastWidth = 0
     let lastHeight = 0
@@ -61,29 +68,49 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
       progress.set(value)
       // Storytelling remains responsive while the manifest or first image loads.
       if (!manifest || !loader) return
-      const index = progressFrame(value, manifest.frameCount)
+      const resources = resourceOptions()
+      const blending = siteConfig.hero.blending
+      const sample = frameBlend(value, manifest.frameCount, {
+        enabled: resources === mobileLoader ? blending.mobile : blending.desktop,
+        start: blending.start, end: blending.end, curve: blending.curve,
+      })
+      current = sample.current
+      next = sample.next
+      const index = sample.nearest
       if (index !== wanted) {
         direction = wanted < 0 || index > wanted ? 1 : -1
         wanted = index
         surface!.dataset.wantedFrame = String(index + 1)
       }
-      loader.configure(resourceOptions())
-      loader.want(wanted, direction)
+      loader.configure(resources)
+      loader.want(wanted, direction, current === next ? -1 : wanted === current ? next : current)
       const dpr = Math.min(window.devicePixelRatio || 1, 2)
       const resized = bounds.width !== lastWidth || bounds.height !== lastHeight || dpr !== lastDpr
-      const target = loader.get(wanted)
-      const image = target ?? (resized ? loader.get(painted) : undefined)
-      if (image && (painted !== wanted || resized || surface!.dataset.ready !== 'true')) {
+      const lower = loader.get(current)
+      const upper = current === next ? lower : loader.get(next)
+      const plan = availableBlend(sample, !!lower, !!upper)
+      const image = plan ? (plan.base === current ? lower : upper) : resized ? loader.get(painted) : undefined
+      const base = plan?.base ?? painted
+      const overlay = plan?.overlay ?? -1
+      const alpha = plan?.alpha ?? 0
+      surface!.dataset.blendAvailable = String(!!lower && !!upper)
+      if (image && (lastBase !== base || lastOverlay !== overlay || lastAlpha !== alpha || resized || surface!.dataset.ready !== 'true')) {
         try {
-          if (paintFrame(surface!, image, bounds.width, bounds.height, background)) {
+          if (paintFrame(surface!, image, bounds.width, bounds.height, background, overlay >= 0 ? upper : undefined, alpha)) {
             // A cache miss during resize redraws the last image, never a blank surface.
-            if (target) painted = wanted
+            if (plan) painted = plan.dominant
             loader.pin(painted)
+            lastBase = base
+            lastOverlay = overlay
+            lastAlpha = alpha
             lastWidth = bounds.width
             lastHeight = bounds.height
             lastDpr = dpr
             surface!.dataset.ready = 'true'
             surface!.dataset.paintedFrame = String(painted + 1)
+            surface!.dataset.blendBase = String(base + 1)
+            surface!.dataset.blendNext = String(overlay + 1)
+            surface!.dataset.blendAlpha = String(alpha)
             surface!.dataset.renderCount = String(++renders)
           }
         } catch {
@@ -144,8 +171,8 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
       loader = new FrameLoader(manifest, options, (index, failed) => {
         if (disposed) return
         stats()
-        if (failed && index === wanted && painted < 0) onUnavailable()
-        else if (index === wanted) schedule()
+        if (failed && painted < 0 && loader?.isUnavailable(current) && loader.isUnavailable(next)) onUnavailable()
+        else if (index === current || index === next) schedule()
       })
       schedule()
     }).catch(() => {

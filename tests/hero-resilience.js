@@ -29,7 +29,12 @@ async page => {
         const c = document.querySelector('canvas');
         const s = document.querySelector('#home');
         if (s) metrics.maxInflight = Math.max(metrics.maxInflight,Number(s.dataset.inflight)||0);
-        if (metrics.watchPaints && records.some(r=>r.attributeName==='data-render-count') && c?.dataset.paintedFrame !== c?.dataset.wantedFrame) { metrics.stalePaints.push({...c.dataset}); }
+        if (metrics.watchPaints && records.some(r=>r.attributeName==='data-render-count') && c) {
+          const v=document.querySelector('.hero-viewport'),p=Math.max(0,Math.min(1,-s.getBoundingClientRect().top/(s.offsetHeight-v.offsetHeight)));
+          const position=p*(Number(c.dataset.frameCount)-1),lo=Math.floor(position)+1,hi=Math.min(lo+1,Number(c.dataset.frameCount));
+          const base=Number(c.dataset.blendBase||c.dataset.paintedFrame),next=Number(c.dataset.blendNext||0);
+          if ((base!==lo && base!==hi) || (next && (base!==lo || next!==hi))) metrics.stalePaints.push({...c.dataset});
+        }
       }).observe(document.documentElement,{subtree:true,attributes:true,attributeFilter:['data-inflight','data-render-count']});
     });
   });
@@ -87,7 +92,8 @@ async page => {
   await seek(.5);
   await page.waitForTimeout(400);
   const held=await page.locator('canvas').getAttribute('data-painted-frame');
-  check(held==='1' && failures===2,'Missing frame did not hold image or retry was unbounded');
+  const missingState=await page.locator('canvas').evaluate(c=>({...c.dataset}));
+  check(held===String(Math.floor(.5*(count-1))+1) && missingState.blendAlpha==='0' && missingState.ready==='true' && failures===2,'Missing nearest frame did not use the valid adjacent fallback or retry was unbounded');
   await seek(1); await waitFrame(count);
   await page.unroute(missing);
   await page.route('**/frames/manifest.json',route=>route.fulfill({status:200,contentType:'application/json',body:'{"frameCount":0}'}));

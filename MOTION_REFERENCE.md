@@ -25,6 +25,10 @@ frameIndex = min(N - 1, floor(p * (N - 1) + 0.5))
 
 `N` is the manifest's actual frame count (at least one). At p=0 display frame 0; at p=1 display N-1. The same progress must select the same frame in either direction. Moving upward reverses the shot. Coalesce drawing into requestAnimationFrame; avoid React state updates for every scroll event. Do not spring-smooth or time-integrate the frame index: that would introduce lag and history dependence. Recalculate geometry on resize/orientation and synchronize restored/deep-linked scroll positions.
 
+### Scroll-fraction blending refinement
+
+The smooth-frame-transition request extends visual rendering without changing the nearest-frame request index above or the story timeline. When enabled, calculate `position = p * (N - 1)`, with `floor(position)` and its next adjacent index. Blend those cached images using a configurable scroll-fraction curve; never blend nonadjacent frames or advance alpha on a clock. Outside the blend window draw a single sharp frame. If only one pair member is available, draw it; otherwise retain the previous surface/poster. First and last positions remain exact endpoint images. Reevaluate late loads against current progress, and freeze when progress and available images are unchanged. Resource-profile enable flags allow disabling this refinement independently. Implementation, final window selection, visual tradeoffs, and measurements are in `docs/HERO_FRAME_BLENDING.md`.
+
 ## Four-stage text choreography
 
 Use the copy from the brief and placements from the design document; these ranges only govern movement. Map opacity/translation to normalized progress so rapid scrolling and reversal never queue stale time-based animations.
@@ -56,7 +60,7 @@ The runtime reads versioned, source-derived WebP profiles: desktop `/frames/mani
 - Resize the canvas backing store only when needed, cap effective device pixel ratio (initial ceiling 2), and draw again immediately after resizing. Preserve source aspect ratio and source markings according to the design document.
 - Suspend unnecessary render/loading work when the document is hidden or the hero is distant. Do not preload every decoded frame into memory.
 
-The deterministic index is the requested frame, even during a cache miss. Once its frame is ready, its displayed result must match the mapping; temporary held-frame fallback must not alter the timeline.
+The deterministic index is the requested frame, even during a cache miss. Once its frame is ready, its displayed result must match the mapping (or the adjacent fractional composition when blending is enabled); temporary fallback must not alter the timeline.
 
 ## Responsive motion and resource budgets
 
