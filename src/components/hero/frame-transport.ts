@@ -4,13 +4,38 @@ import type { FrameManifest } from './manifest'
 type Waiter = { resolve: (blob: Blob) => void; reject: (reason: unknown) => void; signal: AbortSignal; abort: () => void }
 type Job = { index: number; high?: boolean; settled?: boolean; waiters: Set<Waiter>; controller?: AbortController; timer?: ReturnType<typeof setTimeout> }
 export type FrameConnection = EventTarget & { saveData?: boolean; effectiveType?: string; downlink?: number; rtt?: number }
+export interface TransportOptions { concurrency: number; maxFrameBytes?: number }
+
+/** Bound retained response chunks before constructing a Blob; never trust size headers alone. */
+async function readFrameBlob(response: Response, maxBytes?: number): Promise<Blob> {
+  if (maxBytes === undefined) return response.blob()
+  const tooLarge = () => new Error('Compressed frame exceeds byte budget')
+  if (Number(response.headers.get('content-length')) > maxBytes) {
+    await response.body?.cancel()
+    throw tooLarge()
+  }
+  if (!response.body) throw new Error('Frame response has no readable body')
+  const reader = response.body.getReader()
+  const chunks: Uint8Array<ArrayBuffer>[] = []
+  let bytes = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      bytes += value.byteLength
+      if (bytes > maxBytes) { await reader.cancel(); throw tooLarge() }
+      chunks.push(value)
+    }
+    return new Blob(chunks, { type: response.headers.get('content-type') ?? '' })
+  } finally { reader.releaseLock() }
+}
 export function connectionAllowsWarmup(connection?: Pick<FrameConnection, 'saveData' | 'effectiveType' | 'downlink' | 'rtt'>) {
   return !connection?.saveData && !['slow-2g', '2g', '3g'].includes(connection?.effectiveType ?? '') &&
     (connection?.downlink === undefined || connection.downlink >= 2) && (connection?.rtt === undefined || connection.rtt <= 150)
 }
 
 /** Shared compressed fetch pool. Only active responses retain a Blob; HTTP cache owns reuse.
- * Two total network slots, at most one speculative request, no speculative decoding. */
+ * Configured demand slots, at most one speculative request, no speculative decoding. */
 export class FrameTransport {
   private jobs = new Map<number, Job>()
   private completed = new Set<number>()
@@ -25,9 +50,13 @@ export class FrameTransport {
   private idle: ReturnType<typeof setTimeout> | undefined
   private manifest: FrameManifest
   private changed: (count: number) => void
-  constructor(manifest: FrameManifest, changed: (count: number) => void) {
+  private options: TransportOptions
+  constructor(manifest: FrameManifest, changed: (count: number) => void, options: TransportOptions = { concurrency: 2 }) {
+    if (!Number.isInteger(options.concurrency) || options.concurrency < 1 ||
+      (options.maxFrameBytes !== undefined && (!Number.isSafeInteger(options.maxFrameBytes) || options.maxFrameBytes <= 0))) throw new Error('Invalid transport limits')
     this.manifest = manifest
     this.changed = changed
+    this.options = options
   }
 
   read(index: number, signal: AbortSignal, current = true): Promise<Blob> {
@@ -80,7 +109,7 @@ export class FrameTransport {
   private pump() {
     if (this.disposed) return
     for (const job of this.jobs.values()) {
-      if (this.active >= 2) break
+      if (this.active >= this.options.concurrency) break
       if (!job.controller && job.waiters.size) this.start(job)
     }
     if (!this.warming || this.active || this.idle !== undefined || this.jobs.size) return
@@ -107,8 +136,11 @@ export class FrameTransport {
     const started = performance.now()
     void fetch(url, { signal: controller.signal, cache: 'force-cache', priority: job.high ? 'high' : 'low' })
       .then(async response => {
-        if (!response.ok) throw new Error(`Image request failed: ${response.status}`)
-        const blob = await response.blob()
+        if (!response.ok) {
+          await response.body?.cancel()
+          throw new Error(`Image request failed: ${response.status}`)
+        }
+        const blob = await readFrameBlob(response, this.options.maxFrameBytes)
         if (controller.signal.aborted || this.disposed) throw new DOMException('Aborted', 'AbortError')
         // Some engines revalidate/refetch despite force-cache. Stop further speculation
         // on observed repeat transfer; ordinary demand loading remains fully functional.

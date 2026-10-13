@@ -23,7 +23,7 @@ async page => {
    await tab.waitForTimeout(3000)
    if(renders!==await tab.locator('canvas').getAttribute('data-render-count'))throw new Error('Idle rendering during soak')
   }
-  await tab.emulateMedia({reducedMotion:'reduce'});await tab.waitForTimeout(100)
+  await tab.emulateMedia({reducedMotion:'reduce'});await tab.waitForFunction(()=>window.__soak.live===0,null,{timeout:5000})
   if(await tab.evaluate(()=>window.__soak.live)!==0)throw new Error('Soak teardown leaked bitmaps')
   if(errors.length)throw new Error(errors.join('\n'))
   return {seconds:(Date.now()-start)/1000,seeks:40,orientation:true,maxCached:Math.max(...samples.map(s=>s.cache)),peakBitmaps:Math.max(...samples.map(s=>s.peak)),teardownReleased:true,errors}

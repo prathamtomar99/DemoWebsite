@@ -1,5 +1,6 @@
 import type { FrameTransport } from './frame-transport'
 import type { FrameManifest } from './manifest'
+import { fullFrameLoading } from './full-frame-policy'
 
 export interface DecodedFrame {
   image: CanvasImageSource
@@ -24,8 +25,7 @@ export const mobileLoader: LoaderOptions = {
   maxFrames: 6, maxBytes: 24 * 1024 ** 2, concurrency: 2, ahead: 2, behind: 0, timeoutMs: 12000,
 }
 
-async function decodeFrame(transport: FrameTransport, index: number, signal: AbortSignal, current: boolean): Promise<DecodedFrame> {
-  const blob = await transport.read(index, signal, current)
+async function decodeFrame(blob: Blob, signal: AbortSignal): Promise<DecodedFrame> {
   if (signal.aborted) throw new DOMException('Aborted', 'AbortError')
   if (typeof createImageBitmap === 'function') {
     const image = await createImageBitmap(blob)
@@ -50,11 +50,20 @@ async function decodeFrame(transport: FrameTransport, index: number, signal: Abo
   }
 }
 
-/** One request+decode pool. Superseded decodes occupy their slot until settled. */
+interface FrameJob {
+  index: number
+  phase: 'fetch' | 'buffer' | 'decode'
+  controller: AbortController
+  timer: ReturnType<typeof setTimeout>
+  blob?: Blob
+}
+
+/** Full preparation separates transport and decoding; windowed demand keeps combined slots.
+ * Cancelled native decodes occupy their slot until settled in either mode. */
 export class FrameLoader {
   private retaining = false
   private cache = new Map<number, DecodedFrame>()
-  private pending = new Map<number, AbortController>()
+  private pending = new Map<number, FrameJob>()
   private failures = new Map<number, number>()
   private priorities: number[] = []
   private wanted = -1
@@ -79,6 +88,7 @@ export class FrameLoader {
   }
 
   prepareAll() {
+    if (this.disposed) return
     if (this.capacity < this.manifest.frameCount) throw new Error('Decoded sequence exceeds memory ceiling')
     this.retaining = true
     if (this.wanted < 0) this.wanted = 0
@@ -141,8 +151,8 @@ export class FrameLoader {
     }
     this.priorities = [...new Set(priorities)].filter((i) => i >= 0 && i < this.manifest.frameCount)
       .slice(0, Math.min(this.capacity - 1, 1 + this.options.ahead + this.options.behind))
-    for (const [i, controller] of this.pending) {
-      if (!this.priorities.includes(i)) controller.abort('superseded')
+    for (const [i, job] of this.pending) {
+      if (!this.priorities.includes(i)) job.controller.abort('superseded')
     }
     this.pump()
   }
@@ -151,7 +161,7 @@ export class FrameLoader {
     this.clearRetry()
     this.paused = true
     this.priorities = []
-    for (const controller of this.pending.values()) controller.abort('suspended')
+    for (const job of [...this.pending.values()]) job.controller.abort('suspended')
   }
 
   dispose() {
@@ -187,20 +197,52 @@ export class FrameLoader {
 
   private pump() {
     if (this.disposed || this.paused || this.retryTimer !== undefined) return
+    let decoding = 0
+    for (const job of this.pending.values()) if (job.phase === 'decode') decoding++
+    for (const job of this.pending.values()) {
+      if (decoding >= (this.retaining ? fullFrameLoading.decodes : this.options.concurrency)) break
+      if (job.phase === 'buffer') { decoding++; this.decode(job) }
+    }
+    let fetching = 0, reserved = 0
+    for (const job of this.pending.values()) {
+      if (job.phase === 'fetch') fetching++
+      if (job.phase !== 'decode') reserved++
+    }
     for (const index of this.priorities) {
-      if (this.pending.size >= this.options.concurrency) break
-      if (this.cache.has(index) || this.pending.has(index) || (this.failures.get(index) ?? 0) >= 2) continue
+      if (this.retaining) {
+        if (fetching >= fullFrameLoading.downloads || reserved >= fullFrameLoading.compressedSlots) break
+      } else if (this.pending.size >= this.options.concurrency) break
+      if (this.cache.has(index) || this.pending.has(index) || this.isUnavailable(index)) continue
+      fetching++; reserved++
       this.load(index)
     }
   }
 
   private load(index: number) {
     const controller = new AbortController()
-    this.pending.set(index, controller)
-    const timeout = setTimeout(() => controller.abort('timeout'), this.options.timeoutMs)
-    void decodeFrame(this.transport, index, controller.signal, index === this.wanted).then((frame) => {
+    const job: FrameJob = { index, controller, phase: 'fetch',
+      timer: setTimeout(() => controller.abort('timeout'), this.options.timeoutMs) }
+    this.pending.set(index, job)
+    controller.signal.addEventListener('abort', () => {
+      // Buffered jobs have no running promise to settle them. Native decodes do.
+      if (job.phase === 'buffer') this.settle(job, new DOMException('Aborted', 'AbortError'))
+    }, { once: true })
+    void this.transport.read(index, controller.signal, index === this.wanted).then(blob => {
+      if (controller.signal.aborted || this.disposed) throw new DOMException('Aborted', 'AbortError')
+      if (this.retaining && blob.size > fullFrameLoading.maxFrameBytes) throw new Error('Compressed frame exceeds byte budget')
+      job.blob = blob
+      job.phase = 'buffer'
+      this.pump()
+    }).catch(error => this.settle(job, error))
+  }
+
+  private decode(job: FrameJob) {
+    job.phase = 'decode'
+    const { index, controller } = job
+    void decodeFrame(job.blob!, controller.signal).then(frame => {
       if (this.disposed || controller.signal.aborted || !this.priorities.includes(index)) {
         frame.close()
+        if (controller.signal.reason === 'timeout') throw new DOMException('Aborted', 'AbortError')
         return
       }
       if (frame.width !== this.manifest.width || frame.height !== this.manifest.height) {
@@ -210,17 +252,22 @@ export class FrameLoader {
       this.cache.set(index, frame)
       this.evict()
       this.changed(index, false)
-    }).catch(() => {
-      if (this.disposed || (controller.signal.aborted && controller.signal.reason !== 'timeout')) return
+    }).then(() => this.settle(job), error => this.settle(job, error))
+  }
+
+  private settle(job: FrameJob, error?: unknown) {
+    if (this.pending.get(job.index) !== job) return
+    clearTimeout(job.timer)
+    job.blob = undefined
+    this.pending.delete(job.index)
+    const { index, controller } = job
+    if (error && !this.disposed && (!controller.signal.aborted || controller.signal.reason === 'timeout')) {
       const attempts = (this.failures.get(index) ?? 0) + 1
       this.failures.set(index, attempts)
       this.deferRetry()
       if (attempts >= 2) this.changed(index, true)
-    }).finally(() => {
-      clearTimeout(timeout)
-      this.pending.delete(index)
-      this.pump()
-      if (!this.disposed) this.changed(-1, false)
-    })
+    }
+    this.pump()
+    if (!this.disposed) this.changed(-1, false)
   }
 }

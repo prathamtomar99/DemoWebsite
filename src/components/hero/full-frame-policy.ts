@@ -1,3 +1,13 @@
+/** Full-sequence scheduling and compressed-payload bounds shared by loader and transport. */
+export const fullFrameLoading = {
+  downloads: 4,
+  decodes: 2,
+  compressedSlots: 8,
+  // Enforced while reading each response, including absent/incorrect Content-Length.
+  // Eight fetch/buffer reservations plus two decode inputs: <= 2.5 MiB payload.
+  maxFrameBytes: 256 * 1024,
+} as const
+
 /** RGBA estimate, excluding Canvas/GPU/browser overhead; not a free-memory detector. */
 export function decodedSequenceBytes(count: number, width: number, height: number) {
   return count * width * height * 4

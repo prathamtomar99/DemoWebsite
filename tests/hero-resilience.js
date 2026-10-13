@@ -80,9 +80,9 @@ async page => {
     await seek(p); await waitFrame(at(p));
   }
   const memory = await page.evaluate(()=>({...window.__heroMetrics,cache:Number(document.querySelector('#home').dataset.cacheSize)}));
-  check(memory.openBitmaps===count && memory.peakBitmaps<=count && memory.maxInflight<=2,'Unbounded decoded cache or concurrency');
+  check(memory.openBitmaps===count && memory.peakBitmaps<=count && memory.maxInflight<=10,'Unbounded decoded cache or concurrency');
   await page.emulateMedia({reducedMotion:'reduce'});
-  await page.waitForTimeout(100);
+  await page.waitForFunction(()=>window.__heroMetrics.openBitmaps===0,null,{timeout:5000});
   check(await page.evaluate(()=>window.__heroMetrics.openBitmaps)===0,'Bitmap leak after disabling sequence');
   await page.emulateMedia({reducedMotion:'no-preference'});
   await page.goto(base);

@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import type { RefObject } from 'react'
 import type { MotionValue } from 'motion/react'
 import { FrameTransport } from './frame-transport'
-import { decodedSequenceBytes, sequenceBudget } from './full-frame-policy'
+import { decodedSequenceBytes, sequenceBudget, fullFrameLoading } from './full-frame-policy'
 import type { PreparationProgress } from './full-frame-policy'
 import { FrameLoader, desktopLoader, mobileLoader } from './frame-loader'
 import { paintFrame } from './canvas-renderer'
@@ -47,6 +47,8 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     function unavailable(reason: string) {
       if (disposed || failed) return
       failed = true
+      loader?.dispose()
+      transport?.dispose()
       outer!.dataset.preparationFailure = reason
       if (import.meta.env.DEV) console.info(`[Hero preparation] ${reason}`)
       onUnavailable()
@@ -157,7 +159,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
 
     const intersection = new IntersectionObserver(([entry]) => {
       near = entry.isIntersecting
-      if (near) { loader?.prepareAll(); schedule() }
+      if (near && pageActive && !document.hidden && !failed) { loader?.prepareAll(); schedule() }
       else loader?.suspend()
 
     }, { rootMargin: '50% 0px' })
@@ -167,7 +169,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     resize.observe(outer)
     const visibility = () => {
       if (document.hidden) loader?.suspend()
-      else { loader?.prepareAll(); schedule() }
+      else if (near && pageActive && !failed) { loader?.prepareAll(); schedule() }
 
     }
     const pageHidden = () => {
@@ -180,7 +182,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     }
     const pageShown = () => {
       pageActive = true
-      loader?.prepareAll()
+      if (near && !document.hidden && !failed) loader?.prepareAll()
       schedule()
     }
     const contextLost = (event: Event) => {
@@ -200,7 +202,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
     void fetch(publicAsset(manifestPath), { signal: abort.signal }).then(async (response) => {
       if (!response.ok) throw new Error('Manifest unavailable')
       manifest = parseManifest(await response.json())
-      if (disposed) return
+      if (disposed || failed) return
       surface.dataset.frameCount = String(manifest.frameCount)
       surface.dataset.manifest = manifestPath
       if (typeof createImageBitmap !== 'function') { unavailable('bitmap-unavailable'); return }
@@ -216,7 +218,7 @@ export function useHeroSequence({ section, viewport, canvas, progress, enabled, 
         downloaded = count
         outer.dataset.compressedReady = String(count)
         report()
-      })
+      }, { concurrency: fullFrameLoading.downloads, maxFrameBytes: fullFrameLoading.maxFrameBytes })
       loader = new FrameLoader(manifest, options, transport, (_index, frameFailed) => {
         if (disposed) return
         stats()

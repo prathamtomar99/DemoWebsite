@@ -5,14 +5,14 @@ async page => {
   await page.emulateMedia({reducedMotion:'no-preference'});
   await page.addInitScript(()=>{
     Object.defineProperty(navigator,'connection',{configurable:true,value:Object.assign(new EventTarget(),{effectiveType:'4g',downlink:10,rtt:50,saveData:false})});
-    const native=fetch,active=new Set();window.__preparationAudit={duplicates:[],requests:[],peak:0,decoded:0};
+    const native=fetch,active=new Set();window.__preparationAudit={duplicates:[],requests:[],peak:0,decoded:0,activeDecodes:0,peakDecodes:0};
     window.fetch=async(...args)=>{
       const url=String(args[0]),frame=/\/frames\/.*\.webp/.test(url),m=window.__preparationAudit;
       if(frame){if(active.has(url))m.duplicates.push(url);active.add(url);m.requests.push(url);m.peak=Math.max(m.peak,active.size)}
-      try {const response=await native(...args);if(frame){const blob=response.blob.bind(response);response.blob=async()=>{try{return await blob()}finally{active.delete(url)}}}return response}
+      try {const response=await native(...args);if(frame&&response.body){const getReader=response.body.getReader.bind(response.body);response.body.getReader=(...args)=>{const reader=getReader(...args),read=reader.read.bind(reader);reader.read=async(...args)=>{try{const value=await read(...args);if(value.done)active.delete(url);return value}catch(error){active.delete(url);throw error}};return reader}}if(frame){const blob=response.blob.bind(response);response.blob=async()=>{try{return await blob()}finally{active.delete(url)}}}return response}
       catch(e){active.delete(url);throw e}
     };
-    if(window.createImageBitmap){const decode=createImageBitmap;window.createImageBitmap=async(...args)=>{window.__preparationAudit.decoded++;return decode(...args)}}
+    if(window.createImageBitmap){const decode=createImageBitmap;window.createImageBitmap=async(...args)=>{const m=window.__preparationAudit;m.decoded++;m.activeDecodes++;m.peakDecodes=Math.max(m.peakDecodes,m.activeDecodes);try{return await decode(...args)}finally{m.activeDecodes--}}}
   });
   const outcomes=[];
   for(const width of [1440,375]){
@@ -37,7 +37,7 @@ async page => {
     await page.unrouteAll({behavior:'wait'});
     await page.waitForFunction(()=>+document.querySelector('#home').dataset.compressedReady===+document.querySelector('canvas').dataset.frameCount,null,{timeout:20000});
     const warmed=await page.evaluate(()=>({...window.__preparationAudit,cache:+document.querySelector('#home').dataset.cacheSize,frames:+document.querySelector('canvas').dataset.frameCount}));
-    check(warmed.duplicates.length===0&&warmed.peak<=2,'Duplicate/concurrent requests');
+    check(warmed.duplicates.length===0&&warmed.peak===4&&warmed.peakDecodes<=2,'Duplicate/concurrent requests');
     check(warmed.decoded===warmed.frames&&warmed.cache===warmed.frames,'Full sequence was not retained');
     check(warmed.requests.every(u=>u.includes(width===375?'/mobile/':'/desktop/')),'Fetched wrong profile');
     await page.screenshot({path:`artifacts/cinematic-preloader/revealed-${width}.png`});

@@ -28,7 +28,7 @@ async page => {
     check(current.wanted === expected, `Wanted mismatch at ${progress}`);
     check(current.ready === 'true', 'Canvas blank');
     check(current.cache <= current.capacity, 'Cache exceeded cap');
-    check(current.inflight <= 2, 'Request pool exceeded cap');
+    check(current.inflight <= 10, 'Pending fetch/buffer/decode jobs exceeded cap');
     return current;
   };
   await page.emulateMedia({ reducedMotion: 'no-preference' });
@@ -57,7 +57,7 @@ async page => {
   const sizes = [];
   for (const [width, height] of [[768,1024],[375,812]]) {
     await page.setViewportSize({width,height});
-    manifest = await (await page.request.get('http://127.0.0.1:5173'+(width<768?'/frames/v2/mobile/manifest.json':'/frames/manifest.json'))).json();
+    manifest = await (await page.request.get('http://127.0.0.1:5173/'+(width<768?'frames/v2/mobile/manifest.json':'frames/manifest.json'))).json();
     await page.goto('http://127.0.0.1:5173/');
     await page.waitForFunction(() => document.querySelector('canvas').dataset.paintedFrame === '1');
     const layout=await geometry();
